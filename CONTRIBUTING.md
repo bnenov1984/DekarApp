@@ -18,6 +18,31 @@
 <optional footer>
 ```
 
+## Commit Philosophy
+
+Общият принцип, от който произтича всичко по-долу — "два коловоза" (§ следваща секция) е само неговото най-често срещано конкретно приложение:
+
+> Each commit must represent exactly one logical change.
+>
+> A commit should be independently understandable.
+>
+> Avoid mixing:
+> - documentation
+> - refactoring
+> - bug fixes
+> - new features
+>
+> unless they are inseparable.
+>
+> A reader should understand the intent of the commit by reading:
+> - commit title
+> - commit body
+> - changed files
+>
+> without requiring external context.
+
+Тестът при съмнение: ако commit message-ът се нуждае от "и също" или "плюс", за да опише какво прави — това е сигнал за два commit-а, не един.
+
 ## Два коловоза в историята
 
 Дисциплината, която прави историята четима: **документационните и имплементационните промени никога не се смесват в един commit.**
@@ -65,6 +90,15 @@ refactor(application): extract calibration service
 
 chore: update engineering documentation
 ```
+
+## Documentation Synchronization
+
+> Whenever a code change invalidates architectural or product documentation,
+> documentation must be updated before the implementation checkpoint is considered complete.
+>
+> No silent documentation drift is allowed.
+
+Не е ново правило за проекта — вече е практикувано (напр. 19_IMPORT_EXPORT §4 корекцията и ADR-001 addendum-ът от Application Layer Review checkpoint-а, 2026-07-14), тук само се формализира изрично. Прилага се и в двете посоки: код промяна, която прави документ невалиден (архитектурен или продуктов), блокира checkpoint-а/feature-а като "готово", докато документът не се синхронизира — в отделен `docs:` commit по правилото за два коловоза по-горе, не смесен в имплементационния.
 
 ## UI бележка
 
