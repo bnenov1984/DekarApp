@@ -1,0 +1,490 @@
+<title>AreaFlow — Studio Hi-Fi Mockup</title>
+<style>
+  /* ===== Design tokens — source: docs/16_DESIGN_SYSTEM.md ===== */
+  :root{
+    --af-surface-app:#FAFAF8;
+    --af-surface-panel:#FFFFFF;
+    --af-surface-raised:#FFFFFF;
+    --af-ink-primary:#1A1C1E;
+    --af-ink-secondary:#5C6066;
+    --af-ink-tertiary:#9AA0A6;
+    --af-border-subtle:#E7E7E4;
+    --af-accent:#0B6E4F;
+    --af-accent-ink:#FFFFFF;
+    --af-ai:#7C5CFF;
+    --af-warning:#B45309;
+    --af-success:#146C43;
+    --af-meas-1:#2E7D32; --af-meas-2:#1565C0; --af-meas-3:#E65100;
+    --af-shadow-e1:0 1px 2px rgba(20,22,24,.07);
+    --af-shadow-e2:0 4px 16px rgba(20,22,24,.10);
+    --af-radius-sm:6px; --af-radius-md:10px; --af-radius-lg:16px;
+    --af-font-ui:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --af-surface-app:#1B1D21; --af-surface-panel:#24262B; --af-surface-raised:#2C2F35;
+      --af-ink-primary:#ECEDEE; --af-ink-secondary:#A3A7AD; --af-ink-tertiary:#6B7076;
+      --af-border-subtle:#34373D;
+      --af-accent:#34C08B; --af-accent-ink:#0F1512;
+      --af-ai:#9D85FF; --af-warning:#F59E0B; --af-success:#4ADE80;
+      --af-meas-1:#66BB6A; --af-meas-2:#64B5F6; --af-meas-3:#FFA726;
+      --af-shadow-e1:0 1px 2px rgba(0,0,0,.4);
+      --af-shadow-e2:0 4px 16px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"]{
+    --af-surface-app:#1B1D21; --af-surface-panel:#24262B; --af-surface-raised:#2C2F35;
+    --af-ink-primary:#ECEDEE; --af-ink-secondary:#A3A7AD; --af-ink-tertiary:#6B7076;
+    --af-border-subtle:#34373D;
+    --af-accent:#34C08B; --af-accent-ink:#0F1512;
+    --af-ai:#9D85FF; --af-warning:#F59E0B; --af-success:#4ADE80;
+    --af-meas-1:#66BB6A; --af-meas-2:#64B5F6; --af-meas-3:#FFA726;
+    --af-shadow-e1:0 1px 2px rgba(0,0,0,.4);
+    --af-shadow-e2:0 4px 16px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"]{
+    --af-surface-app:#FAFAF8; --af-surface-panel:#FFFFFF; --af-surface-raised:#FFFFFF;
+    --af-ink-primary:#1A1C1E; --af-ink-secondary:#5C6066; --af-ink-tertiary:#9AA0A6;
+    --af-border-subtle:#E7E7E4;
+    --af-accent:#0B6E4F; --af-accent-ink:#FFFFFF;
+    --af-ai:#7C5CFF; --af-warning:#B45309; --af-success:#146C43;
+    --af-meas-1:#2E7D32; --af-meas-2:#1565C0; --af-meas-3:#E65100;
+    --af-shadow-e1:0 1px 2px rgba(20,22,24,.07);
+    --af-shadow-e2:0 4px 16px rgba(20,22,24,.10);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--af-surface-app);color:var(--af-ink-primary);
+    font-family:var(--af-font-ui);font-size:14px;line-height:1.45;
+    padding:32px 24px 64px;
+  }
+  .page{max-width:1240px;margin:0 auto}
+  .page-head{margin-bottom:20px}
+  .eyebrow{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--af-ink-tertiary);margin:0 0 6px}
+  h1{font-size:20px;font-weight:650;margin:0 0 4px;text-wrap:balance}
+  .page-head p{margin:0;color:var(--af-ink-secondary);max-width:68ch}
+  .page-head a{color:var(--af-accent)}
+
+  .frame-wrap{overflow-x:auto;border-radius:var(--af-radius-lg)}
+  .frame{
+    position:relative;min-width:1180px;height:740px;
+    background:var(--af-surface-app);
+    border:1px solid var(--af-border-subtle);border-radius:var(--af-radius-lg);
+    box-shadow:var(--af-shadow-e2);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ===== TopBar (48px) ===== */
+  .topbar{
+    height:48px;flex:0 0 48px;display:flex;align-items:center;gap:12px;
+    background:var(--af-surface-panel);border-bottom:1px solid var(--af-border-subtle);
+    padding:0 12px;z-index:20;
+  }
+  .logo{display:flex;align-items:center;gap:7px;font-weight:700;font-size:14.5px}
+  .logo svg{display:block}
+  .proj{display:flex;align-items:center;gap:5px;color:var(--af-ink-primary);font-weight:550;
+    padding:5px 9px;border-radius:var(--af-radius-sm);cursor:default}
+  .proj:hover{background:var(--af-surface-app)}
+  .caret{color:var(--af-ink-tertiary);font-size:10px}
+  .spacer{flex:1}
+  .ws-chip{
+    display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:550;
+    border:1px solid var(--af-border-subtle);border-radius:999px;padding:5px 12px;
+    color:var(--af-ink-secondary);cursor:default;
+  }
+  .ws-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--af-accent)}
+  .btn{
+    border:none;font:inherit;font-size:13px;font-weight:550;border-radius:var(--af-radius-sm);
+    padding:7px 13px;cursor:default;display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn-ghost{background:transparent;color:var(--af-ink-secondary)}
+  .btn-ghost:hover{background:var(--af-surface-app)}
+  .btn-primary{background:var(--af-accent);color:var(--af-accent-ink)}
+  .avatar{width:28px;height:28px;border-radius:50%;background:var(--af-accent);color:var(--af-accent-ink);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:650}
+
+  /* ===== Main row ===== */
+  .main{flex:1;display:flex;min-height:0;position:relative}
+
+  /* ===== Left panel: Measurement List ===== */
+  .panel-left{
+    width:236px;flex:0 0 236px;background:var(--af-surface-panel);
+    border-right:1px solid var(--af-border-subtle);display:flex;flex-direction:column;z-index:10;
+  }
+  .tabs{display:flex;gap:2px;padding:10px 10px 0}
+  .tab{font-size:12.5px;font-weight:550;padding:6px 10px;border-radius:var(--af-radius-sm) var(--af-radius-sm) 0 0;
+    color:var(--af-ink-tertiary)}
+  .tab.active{color:var(--af-ink-primary);box-shadow:inset 0 -2px 0 var(--af-accent)}
+  .tab .cnt{color:var(--af-ink-tertiary);font-weight:450}
+  .mlist{flex:1;overflow:auto;padding:8px}
+  .mrow{
+    display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:var(--af-radius-sm);
+    cursor:default;
+  }
+  .mrow:hover{background:var(--af-surface-app)}
+  .mrow.selected{background:color-mix(in srgb,var(--af-accent) 10%, transparent);
+    box-shadow:inset 2px 0 0 var(--af-accent)}
+  .swatch{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+  .mname{flex:1;font-size:13px;font-weight:520;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mval{font-size:12.5px;color:var(--af-ink-secondary);font-variant-numeric:tabular-nums}
+  .msum{
+    border-top:1px solid var(--af-border-subtle);padding:10px 18px;display:flex;justify-content:space-between;
+    font-size:12.5px;color:var(--af-ink-secondary);
+  }
+  .msum b{color:var(--af-ink-primary);font-variant-numeric:tabular-nums;font-weight:650}
+
+  /* ===== Canvas ===== */
+  .canvas{flex:1;position:relative;min-width:0;overflow:hidden;background:#8fae7c}
+  .aerial{position:absolute;inset:0}
+  .aerial .grass{position:absolute;inset:0;
+    background:
+      radial-gradient(340px 220px at 78% 40%, #9cb884 0%, transparent 70%),
+      radial-gradient(420px 300px at 20% 80%, #7da068 0%, transparent 70%),
+      radial-gradient(260px 200px at 45% 15%, #86a871 0%, transparent 70%),
+      linear-gradient(160deg,#8fae7c 0%,#7c9e6a 60%,#87a873 100%);
+  }
+  .noise{position:absolute;inset:0;opacity:.5;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  }
+  .tree{position:absolute;border-radius:50%;
+    background:radial-gradient(circle at 38% 32%, #5d7c4c 0%, #46613a 55%, #3a5230 100%);
+    box-shadow:6px 8px 14px rgba(30,40,25,.35);
+  }
+  .driveway-vis{position:absolute;left:6.5%;top:50%;width:16%;height:47%;
+    background:linear-gradient(175deg,#b9b6ae,#a8a59d);transform:skewX(-4deg);
+    box-shadow:inset 0 0 18px rgba(0,0,0,.12);
+  }
+  .roof-vis{position:absolute;left:24%;top:16.5%;width:24.5%;height:26%;
+    background:linear-gradient(100deg,#5a5f66 0%,#494d54 48%,#565b62 52%,#43474e 100%);
+    transform:rotate(2deg);box-shadow:8px 10px 20px rgba(25,30,20,.35);
+  }
+  .pool-vis{position:absolute;left:57.5%;top:55.5%;width:11.5%;height:12%;border-radius:46%;
+    background:radial-gradient(circle at 45% 40%, #6db3c9 0%, #3f8aa8 70%, #35768f 100%);
+    box-shadow:inset 0 3px 10px rgba(255,255,255,.35), 3px 5px 12px rgba(20,40,45,.3);
+  }
+
+  .shapes{position:absolute;inset:0;width:100%;height:100%}
+  .shapes *{vector-effect:non-scaling-stroke}
+
+  /* Measurement chips on canvas */
+  .chip{
+    position:absolute;transform:translate(-50%,-50%);
+    background:var(--af-surface-panel);border-radius:var(--af-radius-sm);
+    box-shadow:var(--af-shadow-e1);padding:5px 10px;text-align:center;
+    border-left:3px solid var(--af-meas-1);white-space:nowrap;
+  }
+  .chip .nm{font-size:11px;font-weight:600;letter-spacing:.01em}
+  .chip .vv{font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--af-ink-secondary)}
+  .chip .vv b{color:var(--af-ink-primary);font-weight:650}
+  .chip.sel{box-shadow:var(--af-shadow-e2), 0 0 0 1.5px var(--af-accent)}
+  .chip.c2{border-left-color:var(--af-meas-2)}
+  .chip.c3{border-left-color:var(--af-meas-3)}
+  .chip.ghost{border-left-color:var(--af-ai);box-shadow:var(--af-shadow-e2)}
+  .chip.ghost .nm{color:var(--af-ai)}
+  .conf{font-size:10.5px;color:var(--af-ink-tertiary)}
+  .ghost-actions{display:flex;gap:6px;justify-content:center;margin-top:5px}
+  .ga{font-size:11px;font-weight:600;border-radius:5px;padding:3px 9px;display:inline-flex;gap:4px;align-items:center}
+  .ga.ok{background:var(--af-ai);color:#fff}
+  .ga.no{background:transparent;color:var(--af-ink-secondary);border:1px solid var(--af-border-subtle)}
+  .kbd{font-size:9.5px;background:rgba(255,255,255,.25);border-radius:3px;padding:0 4px}
+
+  /* Map scale bar (P11) */
+  .scalebar{position:absolute;left:16px;bottom:14px;display:flex;flex-direction:column;gap:3px;
+    color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);font-size:11px;font-variant-numeric:tabular-nums}
+  .scalebar .bar{width:88px;height:4px;border:1.5px solid #fff;border-top:none;
+    box-shadow:0 1px 2px rgba(0,0,0,.4)}
+
+  /* ===== Tool Dock ===== */
+  .dock{
+    position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
+    background:var(--af-surface-panel);border:1px solid var(--af-border-subtle);
+    border-radius:var(--af-radius-lg);box-shadow:var(--af-shadow-e2);
+    display:flex;align-items:center;gap:2px;padding:6px;z-index:15;
+  }
+  .slot{
+    width:38px;height:38px;border-radius:var(--af-radius-md);display:flex;align-items:center;justify-content:center;
+    color:var(--af-ink-secondary);position:relative;cursor:default;
+  }
+  .slot:hover{background:var(--af-surface-app)}
+  .slot.active{background:color-mix(in srgb,var(--af-accent) 12%, transparent);color:var(--af-accent)}
+  .slot.active::after{content:"";position:absolute;left:10px;right:10px;bottom:3px;height:2.5px;
+    border-radius:2px;background:var(--af-accent)}
+  .slot.ai{color:var(--af-ai)}
+  .dock .sep{width:1px;height:24px;background:var(--af-border-subtle);margin:0 5px}
+  .slot svg{display:block}
+
+  /* ===== Right panel: Properties ===== */
+  .panel-right{
+    width:262px;flex:0 0 262px;background:var(--af-surface-panel);
+    border-left:1px solid var(--af-border-subtle);display:flex;flex-direction:column;z-index:10;overflow:auto;
+  }
+  .pr-head{display:flex;align-items:center;gap:8px;padding:14px 16px 10px}
+  .pr-head .nm{font-size:15px;font-weight:650;flex:1}
+  .pr-head .edit{color:var(--af-ink-tertiary)}
+  .sect{border-top:1px solid var(--af-border-subtle);padding:12px 16px}
+  .sect-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--af-ink-tertiary);
+    margin:0 0 10px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .dots{display:flex;gap:7px}
+  .cdot{width:16px;height:16px;border-radius:50%;cursor:default}
+  .cdot.on{box-shadow:0 0 0 2px var(--af-surface-panel), 0 0 0 3.5px var(--af-accent)}
+  .kv{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-size:13px}
+  .kv .k{color:var(--af-ink-secondary)}
+  .kv .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .kv .u{color:var(--af-ink-secondary);font-weight:450;font-size:12px}
+  .fold{display:flex;justify-content:space-between;align-items:center;padding:11px 16px;
+    border-top:1px solid var(--af-border-subtle);font-size:13px;font-weight:550;color:var(--af-ink-secondary)}
+  .fold .chev{color:var(--af-ink-tertiary);font-size:11px}
+  .ext-empty{padding:4px 0 2px;font-size:12.5px;color:var(--af-ink-tertiary)}
+  .ext-empty a{color:var(--af-accent);text-decoration:none;font-weight:550}
+
+  /* ===== Status bar (28px) ===== */
+  .statusbar{
+    height:28px;flex:0 0 28px;display:flex;align-items:center;gap:4px;
+    background:var(--af-surface-panel);border-top:1px solid var(--af-border-subtle);
+    padding:0 10px;font-size:11px;color:var(--af-ink-secondary);z-index:20;
+    font-variant-numeric:tabular-nums;
+  }
+  .sseg{padding:3px 8px;border-radius:5px;display:inline-flex;gap:5px;align-items:center;cursor:default}
+  .sseg:hover{background:var(--af-surface-app)}
+  .sseg .on-dot{width:6px;height:6px;border-radius:50%;background:var(--af-success)}
+  .sync{color:var(--af-success)}
+
+  /* ===== Callouts & legend ===== */
+  .callout{
+    position:absolute;width:22px;height:22px;border-radius:50%;z-index:30;
+    background:var(--af-ink-primary);color:var(--af-surface-panel);
+    display:flex;align-items:center;justify-content:center;
+    font-size:11.5px;font-weight:700;box-shadow:0 0 0 2px var(--af-surface-panel),var(--af-shadow-e1);
+  }
+  .legend{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px 28px}
+  .li{display:flex;gap:12px;align-items:baseline}
+  .li .n{flex:0 0 22px;height:22px;border-radius:50%;background:var(--af-ink-primary);color:var(--af-surface-panel);
+    display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;align-self:flex-start}
+  .li p{margin:0;font-size:13px;color:var(--af-ink-secondary)}
+  .li b{color:var(--af-ink-primary);font-weight:600}
+  .footnote{margin-top:28px;padding-top:14px;border-top:1px solid var(--af-border-subtle);
+    font-size:12px;color:var(--af-ink-tertiary);max-width:78ch}
+</style>
+
+<div class="page">
+  <div class="page-head">
+    <p class="eyebrow">AreaFlow · Phase 2 · Hi-fi mockup</p>
+    <h1>Studio — измерване върху карта (състояние W1)</h1>
+    <p>Референтна реализация на 15_UX_SPECIFICATION §6/W1 с токените от 16_DESIGN_SYSTEM.
+    Селектирано измерване „Backyard", AI ghost предложение върху покрива, празно Extensions състояние.
+    Темата следва системната (светла/тъмна). Mockup — не production код.</p>
+  </div>
+
+  <div class="frame-wrap"><div class="frame">
+
+    <!-- TopBar -->
+    <div class="topbar">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M4 8 L4 20 L16 20" stroke="var(--af-accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 4 L20 4 L20 15 Z" fill="var(--af-accent)" opacity=".85"/>
+        </svg>
+        AreaFlow
+      </div>
+      <div class="proj">Backyard Project <span class="caret">▾</span></div>
+      <div class="spacer"></div>
+      <div class="ws-chip"><span class="dot"></span> General <span class="caret">▾</span></div>
+      <button class="btn btn-ghost">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11 L12 4 L17 11"/><path d="M12 4 L12 15"/><path d="M5 13 v6 h14 v-6"/></svg>
+        Share
+      </button>
+      <button class="btn btn-primary">Export</button>
+      <div class="avatar">BN</div>
+    </div>
+
+    <div class="main">
+      <!-- Left: Measurement List -->
+      <div class="panel-left">
+        <div class="tabs">
+          <div class="tab active">Measurements <span class="cnt">3</span></div>
+          <div class="tab">Layers</div>
+        </div>
+        <div class="mlist">
+          <div class="mrow selected">
+            <span class="swatch" style="background:var(--af-meas-1)"></span>
+            <span class="mname">Backyard</span>
+            <span class="mval">124.5 m²</span>
+          </div>
+          <div class="mrow">
+            <span class="swatch" style="background:var(--af-meas-2)"></span>
+            <span class="mname">Pool</span>
+            <span class="mval">32.1 m²</span>
+          </div>
+          <div class="mrow">
+            <span class="swatch" style="background:var(--af-meas-3)"></span>
+            <span class="mname">Driveway</span>
+            <span class="mval">48.0 m²</span>
+          </div>
+        </div>
+        <div class="msum"><span>Σ Total area</span><b>204.6 m²</b></div>
+      </div>
+
+      <!-- Canvas -->
+      <div class="canvas">
+        <div class="aerial">
+          <div class="grass"></div>
+          <div class="noise"></div>
+          <div class="tree" style="left:52%;top:8%;width:7%;height:13%"></div>
+          <div class="tree" style="left:90%;top:64%;width:8.5%;height:15%"></div>
+          <div class="tree" style="left:47%;top:76%;width:6%;height:11%"></div>
+          <div class="tree" style="left:2%;top:24%;width:9%;height:16%"></div>
+          <div class="driveway-vis"></div>
+          <div class="roof-vis"></div>
+          <div class="pool-vis"></div>
+        </div>
+
+        <!-- Measurement geometry -->
+        <svg class="shapes" viewBox="0 0 1000 640" preserveAspectRatio="none">
+          <!-- Driveway -->
+          <polygon points="80,330 210,315 245,608 105,625"
+            fill="var(--af-meas-3)" fill-opacity=".14" stroke="var(--af-meas-3)" stroke-width="2"/>
+          <!-- Pool -->
+          <ellipse cx="633" cy="393" rx="60" ry="41"
+            fill="var(--af-meas-2)" fill-opacity=".14" stroke="var(--af-meas-2)" stroke-width="2"/>
+          <!-- Backyard (selected) -->
+          <polygon points="550,120 885,145 918,390 700,465 520,355"
+            fill="var(--af-meas-1)" fill-opacity=".15" stroke="#fff" stroke-width="4.5" stroke-opacity=".55"/>
+          <polygon points="550,120 885,145 918,390 700,465 520,355"
+            fill="none" stroke="var(--af-meas-1)" stroke-width="2.4"/>
+          <!-- selection handles -->
+          <g fill="#fff" stroke="var(--af-accent)" stroke-width="1.8">
+            <rect x="544" y="114" width="12" height="12" rx="2.5"/>
+            <rect x="879" y="139" width="12" height="12" rx="2.5"/>
+            <rect x="912" y="384" width="12" height="12" rx="2.5"/>
+            <rect x="694" y="459" width="12" height="12" rx="2.5"/>
+            <rect x="514" y="349" width="12" height="12" rx="2.5"/>
+          </g>
+          <!-- AI ghost: roof -->
+          <polygon points="248,112 482,126 472,272 238,258"
+            fill="none" stroke="var(--af-ai)" stroke-width="2.4" stroke-dasharray="9 7"/>
+        </svg>
+
+        <!-- Chips -->
+        <div class="chip sel" style="left:71%;top:44%">
+          <div class="nm">Backyard</div>
+          <div class="vv"><b>124.5 m²</b> · 45.2 m</div>
+        </div>
+        <div class="chip c2" style="left:63%;top:70.5%">
+          <div class="vv"><b>32.1 m²</b></div>
+        </div>
+        <div class="chip c3" style="left:16%;top:80%">
+          <div class="vv"><b>48.0 m²</b></div>
+        </div>
+        <div class="chip ghost" style="left:36%;top:22%">
+          <div class="nm">✦ Roof</div>
+          <div class="vv"><b>~102 m²</b> <span class="conf">· 87% match</span></div>
+          <div class="ghost-actions">
+            <span class="ga ok">✓ Accept <span class="kbd">⏎</span></span>
+            <span class="ga no">✕ <span class="kbd" style="background:var(--af-surface-app)">esc</span></span>
+          </div>
+        </div>
+
+        <!-- Map scale bar -->
+        <div class="scalebar"><span>10 m</span><div class="bar"></div></div>
+
+        <!-- Tool Dock -->
+        <div class="dock">
+          <div class="slot active" title="Select — V">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M4 3 L11 20 L13.2 13.2 L20 11 Z"/></svg>
+          </div>
+          <div class="slot" title="Pan — H">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg>
+          </div>
+          <div class="sep"></div>
+          <div class="slot" title="Rectangle — R">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2"/></svg>
+          </div>
+          <div class="slot" title="Polygon — P">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 L21 9.6 L17.6 20 L6.4 20 L3 9.6 Z"/></svg>
+          </div>
+          <div class="slot" title="Circle — C">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/></svg>
+          </div>
+          <div class="slot" title="Curve — B">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20 C4 8 20 16 20 4"/><circle cx="4" cy="20" r="1.6" fill="currentColor"/><circle cx="20" cy="4" r="1.6" fill="currentColor"/></svg>
+          </div>
+          <div class="slot" title="Freehand — F">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3 a2.85 2.85 0 1 1 4 4 L7.5 20.5 L2 22 l1.5-5.5 Z"/></svg>
+          </div>
+          <div class="slot" title="Distance — D">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 18 L18 6"/><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/></svg>
+          </div>
+          <div class="sep"></div>
+          <div class="slot ai" title="AI detect — A">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5 L14.4 9.6 L21.5 12 L14.4 14.4 L12 21.5 L9.6 14.4 L2.5 12 L9.6 9.6 Z"/></svg>
+          </div>
+          <div class="sep"></div>
+          <div class="slot" title="Import — file or map">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+        </div>
+
+        <!-- Callouts -->
+        <div class="callout" style="left:36.5%;bottom:10px;transform:translateX(-50%)">1</div>
+        <div class="callout" style="left:78.5%;top:37.5%">2</div>
+        <div class="callout" style="left:44%;top:13%">3</div>
+        <div class="callout" style="left:112px;bottom:44px">4</div>
+      </div>
+
+      <!-- Right: Properties -->
+      <div class="panel-right">
+        <div class="pr-head">
+          <span class="nm">Backyard</span>
+          <span class="edit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3 a2.85 2.85 0 1 1 4 4 L7.5 20.5 L2 22 l1.5-5.5 Z"/></svg>
+          </span>
+        </div>
+        <div class="sect">
+          <p class="sect-h">Color</p>
+          <div class="dots">
+            <span class="cdot on" style="background:var(--af-meas-1)"></span>
+            <span class="cdot" style="background:var(--af-meas-2)"></span>
+            <span class="cdot" style="background:var(--af-meas-3)"></span>
+            <span class="cdot" style="background:#6A1B9A"></span>
+            <span class="cdot" style="background:#00838F"></span>
+            <span class="cdot" style="background:#C62828"></span>
+            <span class="cdot" style="background:#4E342E"></span>
+            <span class="cdot" style="background:#37474F"></span>
+          </div>
+        </div>
+        <div class="sect">
+          <p class="sect-h">Values</p>
+          <div class="kv"><span class="k">Area</span><span class="v">124.5 <span class="u">m²</span></span></div>
+          <div class="kv"><span class="k">Perimeter</span><span class="v">45.2 <span class="u">m</span></span></div>
+          <div class="kv"><span class="k">Vertices</span><span class="v">5</span></div>
+        </div>
+        <div class="fold">Notes <span class="chev">▸</span></div>
+        <div class="sect">
+          <p class="sect-h">Extensions</p>
+          <p class="ext-empty">Nothing installed yet.<br><a href="#" onclick="return false">Browse the marketplace →</a></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <span class="sseg">m² <span class="caret">▾</span></span>
+      <span class="sseg">100%</span>
+      <span class="sseg"><span class="on-dot"></span> Snap</span>
+      <div class="spacer"></div>
+      <span class="sseg sync">✓ Synced</span>
+    </div>
+
+  </div></div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="li"><span class="n">1</span><p><b>Tool Dock</b> — долу-център (P3/D1): ≤10 слота, оцелява непроменен на таблет и телефон. Активният инструмент е filled + accent. AI (✦) е отделен с разделител и резервирания виолетов цвят.</p></div>
+    <div class="li"><span class="n">2</span><p><b>MeasurementChip</b> — измерването е живият обект (D2): стойността стои върху фигурата, на непрозрачна подложка (контраст върху произволен фон). Селектираният chip носи accent ринг.</p></div>
+    <div class="li"><span class="n">3</span><p><b>AI Ghost</b> (§18): пунктир, ~префикс, confidence, Accept/Esc на самото платно. Не влиза в списъка и сумата, докато не бъде прието.</p></div>
+    <div class="li"><span class="n">4</span><p><b>Scale bar</b> (P11) — картографската конвенция; при изображение/PDF мястото ѝ заема ScaleChip с календрирания мащаб.</p></div>
+  </div>
+
+  <p class="footnote">Ляв панел: двупосочният Measurement List (P4/D8) със сумарен footer — селекцията в списъка е селекция на платното. Десен панел: контекстни свойства на селекцията + празното състояние на Extensions (§15). Всички цветове, радиуси, сенки и типографски стойности идват от токените в 16_DESIGN_SYSTEM.md; тъмната тема е втора първокласна тема, не инверсия.</p>
+</div>

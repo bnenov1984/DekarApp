@@ -1,0 +1,157 @@
+# 18 — Drawing Engine
+
+**Статус:** Draft v1 за одобрение от PO
+**Мандат (Bible):** "Polygon, Rectangle, Circle, Curve, Freehand, Vertex Editing, Snap, Undo/Redo." Разширено с **Split** (PD-009).
+**Позиция в модела:** Bounded Context upstream от всичко (14 §1) — единственият, който мутира Shape. Measurement Engine (17) го чете, никога обратно.
+
+---
+
+## §1. Граница на отговорност
+
+### Прави
+- Създава и мутира Shape (VO, 14 §3) чрез дискретни операции: create, vertex edit, snap, split.
+- Управлява snap towards други Shapes в същата Surface.
+- Произвежда domain events (14 §5: `MeasurementDrawn`, `MeasurementShapeEdited`, `MeasurementSplit`, `MeasurementDeleted`) за command/undo стека.
+- Гарантира геометрична валидност на всеки Shape, който предава надолу (прост полигон, без самопресичане) — INV предпоставка за 17 §3.1.
+
+### Изрично НЕ прави (guardrail проверка, PD-002/003)
+- Не изчислява area/perimeter/ъгли — това е Measurement Engine (17); Drawing Engine не съдържа нито една формула за стойност.
+- Не рисува пиксели — рендерингът на canvas (SVG/Canvas2D/WebGL слой) е UI отговорност (15/16); Drawing Engine произвежда/мутира данни, UI ги визуализира.
+- Не знае за Workspace, Extension, Report, AI confidence — приема готов Shape кандидат от AI Context (Ghost commit) по същия интерфейс като ръчно чертане, без разлика в третирането.
+- Не решава мерни единици — работи в абстрактни локални координати; превод в реални единици е Calibration + Measurement Engine (17 §4).
+
+---
+
+## §2. Shape data model
+
+```
+Shape :=
+  | Polygon    { vertices: Point[] }                      // затворен, прост (без самопресичане)
+  | Rectangle  { origin: Point, width: number, height: number, rotation: number }
+  | Circle     { center: Point, radius: number }
+  | Curve      { controlPoints: Point[], closed: boolean } // Bézier/сплайн
+  | Freehand   { points: Point[], closed: boolean }
+  | Line       { from: Point, to: Point }                  // Distance инструмент
+```
+
+**Point** е координатна двойка в **локалното пространство на Surface-а** (§3) — не пиксели на екрана, не lat/lng директно (за Map, вижте §3.3).
+
+**Валидност при създаване (enforced от Drawing Engine, консумирано от 17):**
+- Polygon: ≥3 върха, без самопресичащи се ръбове (проверка при затваряне — 15 F1 стъпка 6).
+- Rectangle/Circle: по конструкция валидни (параметрична форма).
+- Curve/Freehand: валидни за всякакъв брой точки ≥2; "затворена" флагът определя дали площ се изчислява.
+
+---
+
+## §3. Координатни системи
+
+Три слоя, всеки с ясна граница:
+
+| Слой | Единица | Собственик | Кога се минава в друг |
+|------|---------|------------|------------------------|
+| **Screen space** | CSS пиксели, viewport-относителни | UI/рендер (15/16) | При всяко въвеждане на потребителя (клик, drag) → превръща се в Surface space преди да стигне до Drawing Engine |
+| **Surface space** | Локални единици на Surface-а (px за некалибрирано изображение/PDF; lat/lng за Map) | **Drawing Engine** — тук живее Shape | Изпраща се на Measurement Engine заедно с Calibration |
+| **Real-world units** | m/ft/m² (резултат) | Measurement Engine (17) | Никога не се връща обратно в Drawing Engine — еднопосочен поток (14 §1 context map) |
+
+**Защо Drawing Engine не работи директно в screen space:** zoom/pan биха направили Shape нестабилен спрямо viewport-а (същата фигура "сменя координати" при zoom). Surface space е инвариант спрямо камерата — geometric single source of truth.
+
+**Map surface частен случай (§3.3):** Point за Map е `(lat, lng)`, не декартова двойка. Drawing Engine третира lat/lng формално като 2D координати за целите на snap/vertex editing (достатъчно за малки локални разстояния); прехвърлянето към коректна метрична геометрия е изцяло отговорност на Measurement Engine (17 §4) — Drawing Engine никога не проектира, никога не смята разстояние в метри.
+
+---
+
+## §4. Snap система
+
+**Snap targets** (приоритет при конфликт, най-висок пръв):
+
+1. **Vertex** на друг Shape в същата Surface (визуален маркер ◆, 15 §14.3)
+2. **Edge** на друг Shape — прилепва към произволна точка по ръба, добавя snap-точка (не поставя нов връх в чуждия Shape) (маркер ▸)
+3. **Ъгъл** спрямо последния сегмент от текущото чертане: 0°/45°/90° (маркер ∠, задържан само с `Shift`, 15 §13)
+4. **Self-snap**: затваряне на полигон към собствения първи връх (винаги активно, независимо от snap toggle — иначе фигурата не може да се затвори надеждно)
+
+**Толеранс:** дефиниран в screen space (напр. 8px радиус около курсора), превърнат в Surface space динамично спрямо текущия zoom — snap чувствителността не се променя визуално при zoom in/out (постоянна "лепкавост" в пиксели, независимо от мащаба на данните).
+
+**Изключване:** `⌥` (Alt) временно изключва всички snap targets с изключение на self-snap затварянето (§4.4) — потребителят винаги може да затвори фигура дори при изключен snap.
+
+---
+
+## §5. Split — алгоритъм (PD-009)
+
+**Вход:** родителски Polygon (прост, евентуално невъпуклonvex — реалните парцели рядко са изпъкнали) + разделителна линия (single segment или polyline от чертане, 15 F7).
+
+**Валидационно правило (съвпада с UX спецификацията, 15 §5 F7):** линията трябва да пресича границата на полигона в **точно 2 точки** (edge-to-edge single crossing pair). Всеки друг брой пресичания се отхвърля с UI hint "Extend the line across the shape" — Drawing Engine expose-ва булев `canSplit(polygon, line)` резултат, който 15 §6 (CalibrationBar-подобният ред) директно консумира за Enter активиране/деактивиране.
+
+**Алгоритъм (polygon boundary partition):**
+
+```
+function split(polygon, splitLine):
+    intersections = findBoundaryIntersections(polygon.edges, splitLine)
+    if len(intersections) != 2:
+        return SplitResult.invalid("line must cross the shape exactly twice")
+
+    (entryPoint, entryEdgeIndex), (exitPoint, exitEdgeIndex) = intersections
+
+    // Върви по границата от entry до exit (посока 1) → затвори по splitLine обратно → Child A
+    childA_boundary = walkBoundary(polygon, entryEdgeIndex, entryPoint, exitEdgeIndex, exitPoint)
+                       + reverseSplitLinePath(entryPoint, exitPoint)
+
+    // Върви по границата от exit до entry (посока 2, останалата дъга) → затвори по splitLine → Child B
+    childB_boundary = walkBoundary(polygon, exitEdgeIndex, exitPoint, entryEdgeIndex, entryPoint)
+                       + reverseSplitLinePath(exitPoint, entryPoint)
+
+    return SplitResult.valid([Polygon(childA_boundary), Polygon(childB_boundary)])
+```
+
+**За полилиния (множество сегменти на разделителната линия):** същият алгоритъм, `splitLine` е поредица от точки; всяка вътрешна точка на полилинията се третира като допълнителен връх в затварящата дъга на всяко дете — резултатът остава точно 2 деца на една Split операция (за 3+ части, потребителят прилага Split повторно върху вече създадено дете, 15 F7 "повторение за следваща делба" — умишлено просто, не N-way split в едно действие).
+
+**Гаранция за геометрична идентичност (INV-4 предпоставка):** тъй като двете деца по конструкция партиционират оригиналната граница (споделят точно `entryPoint`↔`exitPoint` сегмента, обходен в противоположни посоки), `Area(childA) + Area(childB) = Area(parent)` е геометрично тъждество, не приближение — Measurement Engine (17 §6) валидира това само като защита срещу bug, не защото очаква несъответствие.
+
+**Работи и за невъпуклонни (non-convex) полигони:** алгоритъмът разчита само на "обхождане на границата между две пресечни точки", не на изпъкналост — реален неправилен парцел (влизане/излизане на границата) се разделя коректно, стига разделителната линия да пресича границата точно два пъти.
+
+**Ръчният път остава незасегнат (PD-009):** Split е допълнителна Drawing Engine операция, извиквана експлицитно; никоя друга операция (create, vertex edit) не се променя от съществуването ѝ. Потребител, който чертае частите ръчно (US-042), изобщо не докосва тази функция — двата пътя произвеждат структурно идентични Measurement записи (разликата е само наличието на `SplitGroup` VO, 14 §3).
+
+---
+
+## §6. Vertex editing
+
+- **Добавяне на връх**: drag върху ръб (не връх) на селектиран Polygon/Freehand → нов връх на drop позицията, останалите непроменени.
+- **Местене на връх**: drag на съществуващ връх → snap targets (§4) активни през цялата операция.
+- **Изтриване на връх**: (модификатор, напр. Alt+клик върху връх, или Delete при фокусиран връх в keyboard режим, 15 §12.1) — полигонът остава валиден само ако резултатът има ≥3 върха и остава прост; операция, която би направила Shape невалиден (самопресичане, <3 върха), се отхвърля тихо (връщане към предходното валидно състояние, без грешка към потребителя — UI просто не позволява drop-а там).
+- Всяка vertex editing операция произвежда нов Shape VO (замяна, не мутация на място, 14 §3) — старата стойност остава в command стека за undo.
+
+---
+
+## §7. Undo/Redo — интерфейс, не механизъм
+
+Drawing Engine излага всяка мутация като дискретна, инвертируема команда (14 §5 domain events: `MeasurementDrawn`, `MeasurementShapeEdited`, `MeasurementSplit`, `MeasurementDeleted`). Всяка носи достатъчно информация да се обърне (старият Shape VO за edit, децата за split-undo → връщане към единствения родител, и т.н.) — INV-12 (14 §4): всяка команда освен `ProjectDeleted` има inverse.
+
+**Изрично оставено на 21_ARCHITECTURE:** дали стекът е event-sourced (пресъздаване от лог събития) или command-pattern (директни inverse функции) — Drawing Engine само гарантира, че всяка негова операция е *логически* обратима; кой механизъм я обръща е архитектурен избор, не engine отговорност.
+
+---
+
+## §8. Interface надолу по веригата
+
+- **→ Measurement Engine (17):** предава валиден Shape + подразбира се текущата Calibration на Surface-а; еднопосочно, синхронно извикване при всяка промяна (live computation, 15 §14.2).
+- **→ AI Context (20):** приема Ghost.shape при commit през същия `create` интерфейс като ръчно чертане — Drawing Engine не различава произход на входа геометрично; provenance маркирането е грижа на Measurement/domain слоя (14 §3 Provenance VO), не на Drawing Engine.
+- **← UI (15/16):** получава суров input (screen space кликове/drags) вече превърнат в Surface space координати (§3) от рендер слоя; Drawing Engine никога не чете screen пиксели директно.
+
+---
+
+## §9. Testability (за 22_TDD)
+
+- Snap система: table-driven тестове с известни конфигурации (връх/ръб/ъгъл близост) → очакван snap резултат, включително толеранс граничните случаи.
+- Vertex editing: property-based — произволна валидна редакция никога не произвежда самопресичащ се или <3-върхов полигон (инвариант, не regresион).
+- **Split:** golden test случаи от реални неправилни (non-convex) форми (буква "L", "U"); property-based тест генерира случаен прост полигон + случайна валидна пресичаща линия, проверява `canSplit` резултата и геометричното партициониране (всяка точка на оригиналната граница принадлежи на точно едно дете, с изключение на споделения segment между entry/exit).
+- Undo инвариант: за всяка операция, `apply(inverse(op), apply(op, state)) == state` (round-trip тест).
+
+---
+
+## §10. Проверка срещу 14/05
+
+| Правило тук | Произход |
+|-------------|----------|
+| Не изчислява стойности | 14 §1 (Drawing upstream, Measurement downstream); PD-002/003 |
+| Работи в Surface space, не screen space | 14 §3 (Shape като VO, инвариантен спрямо камера) |
+| Split приема non-convex, изисква точно 2 пресичания | PD-009; 15 §5 F7 UX правило |
+| Ръчен path незасегнат от Split | PD-009 "допълнение, не замяна" |
+| Всяка операция инвертируема освен ProjectDeleted | 14 INV-12 |
+| AI Ghost влиза през същия интерфейс като ръчно чертане | PD-013 (Ghost→commit е превод, не специален случай) |
