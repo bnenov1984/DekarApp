@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Project, Surface } from '../../core/domain/entities.js';
+import { initStudioSession } from './studioSession.js';
 
 // 11_INFORMATION_ARCHITECTURE.md §5 Navigation Tree — the app has exactly two screens (Home,
 // Studio) plus overlays (15 §4); ADR-006 chose plain state over a routing library because that
@@ -45,6 +46,9 @@ export function startBlankProject(): void {
     reportIds: [],
   };
   appState.set({ screen: 'studio', project, surfaces: [surface], activeSurfaceId: surfaceId });
+  // fresh CommandStack per project session (21 §4.2, ADR-001) — starting a new project always
+  // begins with an empty undo history, never inherits the previous session's.
+  initStudioSession(surface);
 }
 
 /** 15 §5 D6 — logo/back returns to Home; the project is not discarded (autosave semantics,
