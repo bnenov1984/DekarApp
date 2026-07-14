@@ -39,7 +39,12 @@ export interface Layer {
   readonly measurements: readonly Measurement[];
 }
 
-export type SurfaceKind = 'image' | 'pdfPage' | 'map';
+/** 'blank' added 2026-07-15 (UI commit 2): 15_UX_SPECIFICATION §6 W4 lists "Blank canvas" as a
+ * third Start affordance alongside Map/Import, but the original three-value enum under-modeled
+ * it — a blank Surface has no backing raster/geo source at all, distinct from an 'image' Surface
+ * with a not-yet-loaded blob. Disclosed Core correction, not a new product capability (Bible/15
+ * already specified "Blank canvas"; this only models what was already approved). */
+export type SurfaceKind = 'image' | 'pdfPage' | 'map' | 'blank';
 
 /** 14 §2.1 — the aggregate root. Source blob/tile reference intentionally excluded from Core:
  * that's a StorageAdapter/MapProvider (Adapters-layer) concern (21 §5.2/§8.1), not domain data
