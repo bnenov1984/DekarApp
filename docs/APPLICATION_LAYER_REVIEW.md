@@ -80,7 +80,10 @@
 
 ## §5. Известни рискове / отворени точки
 
-1. **ESLint boundary правилото не е тествано срещу реално нарушение** — минава чисто, защото `src/ui/` все още не съществува. Първият UI импорт на Core/Application ще е реалната проверка.
-2. **`undo(): T` отклонението от 23 §3.2** (§1 по-горе) е разумно, но не е формално ADR-записано — ако предпочиташ, мога да добавя кратко допълнение към ADR-001.
-3. **19_IMPORT_EXPORT §4 формулировка** леко подвежда спрямо новия ReportRepository port — предложена малка редакция, не е направена автоматично (PD-020: без тихи редакции).
-4. **AssetRepository решението разчита на StorageAdapter (23 §4), който все още не е имплементиран в код** — концептуално коректно, но нетествано с реален adapter.
+**Актуализация (2026-07-14, documentation-only checkpoint след PO review):**
+
+1. **ESLint boundary правилото не е тествано срещу реално нарушение** — все още открито. Виж §UI Gate таблицата по-горе: изрично преформулирано като "CONFIGURED, but not yet empirically verified", не като изпълнено условие. Задължителна проверка: първият UI integration commit. Не се добавя фиктивен UI код само за да се тества правилото предварително.
+2. ~~`undo(): T` отклонението от 23 §3.2 не е формално ADR-записано~~ — **резолвирано.** Addendum добавен към [ADR-001](26_ADR/ADR-001-command-stack-undo.md#addendum-2026-07-14--undo-t-не-undo-void): отклонението е приет, формален contract, не временен TODO. Изрично очертана граница: `T` остава домейнов тип, никога UI-specific projection.
+3. ~~19_IMPORT_EXPORT §4 формулировка подвежда спрямо ReportRepository port~~ — **резолвирано.** 19 §4 актуализиран: ownership (Report под Project, 14 §2.2) и port granularity (отделен `ReportRepository`) са изрично разграничени като два различни въпроса.
+4. **AssetRepository решението разчита на StorageAdapter (23 §4), който все още не е имплементиран в код** — остава **проследен engineering risk, не блокер** (PO решение). Записан формално като [ISS-008](27_NOTES/PHASE_4_IMPLEMENTATION_ISSUES.md), с explicit acceptance критерий за валидация при първата реална StorageAdapter имплементация.
+5. **AI orchestration** (`propose()`, `AIContext`, offline деградация) — изрично **не** е разширение на този commit (PO решение). Записано като [ISS-009](27_NOTES/PHASE_4_IMPLEMENTATION_ISSUES.md), маркирано DEFERRED за самостоятелен следващ Application-layer slice. `commitGhostCommand` (§3/§4 по-горе) остава достатъчен за доказване на write path инварианта днес.

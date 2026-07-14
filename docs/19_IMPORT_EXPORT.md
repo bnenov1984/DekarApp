@@ -75,9 +75,11 @@ Report generation trigger (15 F6)
     → Measurement Engine.compute() извикан за всяко (пресни стойности към момента на generate)
     → замразяване в ReportSnapshot VO (не референции към живи Measurement обекти)
     → рендериране по формат (§5)
-    → ReportRepository (част от ProjectRepository, 14 §2.2) пази конфигурацията + "last generated" маркер
+    → ReportRepository пази конфигурацията + "last generated" маркер
     → артефактът (файл) напуска системата — не се пази (11 §7)
 ```
+
+**Актуализация (2026-07-14, Application Layer Review):** По-ранна версия на този параграф описваше ReportRepository като "част от ProjectRepository" (14 §2.2 показва Report като entity под Project в ownership дървото — това си остава вярно за *притежанието/cascade delete*). Логическата **порт граница**, срещу която Application слоят реално пише код, е **отделен `ReportRepository`** (`src/application/ports/reportRepository.ts`), не метод на `ProjectRepository`. Обосновка: генерирането на Report е append-only операция върху immutable snapshot-и (INV-11) — структурно различна операционна форма от CRUD-with-mutation lifecycle-а на Project (create/rename/archive/delete). Ownership (11 §2 дървото) и port granularity (кой interface Application-ът вика) са два различни въпроса; предишната формулировка ги сливаше. Физическото съхранение може да остане в същата база (ADR-004) — това е implementation detail зад порта, не пипа тази граница.
 
 **INV-11 буквално тук:** `ReportSnapshot` е value object, копие на стойностите в момента на извикване — последваща редакция на Measurement не пипа вече генериран snapshot. Ако потребителят генерира отчет отново, нов `ReportSnapshot` се произвежда (нов timestamp), старият не се презаписва мълчаливо (маркерът в 11 §6 "отчетът е отпреди промените" остава четим за стари snapshot-и, ако Phase 4 реши да ги пази история — не е задължително за v1, само не се губи възможността).
 
