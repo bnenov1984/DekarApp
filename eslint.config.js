@@ -20,6 +20,14 @@ export default tseslint.config(
   {
     plugins: { boundaries },
     settings: {
+      // Without an explicit TS-aware resolver, NodeNext-style `.js`-suffixed imports between
+      // `.ts` files silently fail to resolve, and eslint-plugin-boundaries ignores unresolved
+      // imports — meaning the boundary rule never actually fired. Found empirically via a
+      // deliberate violation probe during the first UI->Application integration (the exact
+      // "mandatory verification point" APPLICATION_LAYER_REVIEW called out).
+      'import/resolver': {
+        typescript: { alwaysTryTypes: true },
+      },
       'boundaries/elements': [
         { type: 'core', pattern: 'src/core/**' },
         { type: 'application', pattern: 'src/application/**' },
