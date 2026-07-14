@@ -1,0 +1,37 @@
+/* Minimal reset + base — 16 §1: "спокоен, точен, дружелюбен". No decorative gradients in
+   chrome; color is reserved for measurements and status (16 §1). */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--af-surface-app);
+  color: var(--af-ink-primary);
+  font-family: var(--af-font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden; /* 21 §11: the canvas takes all free space, the page itself never scrolls */
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
