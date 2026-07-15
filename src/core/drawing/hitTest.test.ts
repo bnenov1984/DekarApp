@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitTestShape, findVertexAt, findEdgeAt } from './hitTest.js';
+import { hitTestShape, findVertexAt, findEdgeAt, findRectangleCornerAt, isNearCircleHandle } from './hitTest.js';
 import type { CircleShape, LineShape, PolygonShape, RectangleShape } from '../domain/types.js';
 
 const square: PolygonShape = {
@@ -131,5 +131,42 @@ describe('findEdgeAt', () => {
   it('returns null for shape types with no editable point list', () => {
     const circle: CircleShape = { type: 'circle', center: { x: 0, y: 0 }, radius: 5 };
     expect(findEdgeAt({ x: 5, y: 0 }, circle, 1)).toBeNull();
+  });
+});
+
+// docs/18_DRAWING_ENGINE.md §6 (resize) — handle hit-testing for the parametric shapes
+// (Rectangle/Circle) that have no point list, so `findVertexAt`/`findEdgeAt` don't apply to them.
+
+describe('findRectangleCornerAt', () => {
+  const rect: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 };
+
+  it('finds the index of a corner within tolerance', () => {
+    expect(findRectangleCornerAt({ x: 100.2, y: 49.9 }, rect, 1)).toBe(2); // (100,50) corner
+  });
+
+  it('returns null when no corner is within tolerance', () => {
+    expect(findRectangleCornerAt({ x: 50, y: 25 }, rect, 1)).toBeNull(); // center, far from any corner
+  });
+
+  it('accounts for rotation', () => {
+    const rotated: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 10, rotation: Math.PI / 2 };
+    // corner 1 (local (10,0)), rotated 90° -> world (0, 10)
+    expect(findRectangleCornerAt({ x: 0.1, y: 10 }, rotated, 1)).toBe(1);
+  });
+});
+
+describe('isNearCircleHandle', () => {
+  const circle: CircleShape = { type: 'circle', center: { x: 100, y: 100 }, radius: 50 };
+
+  it('is true near the handle at center.x + radius', () => {
+    expect(isNearCircleHandle({ x: 150.5, y: 100 }, circle, 1)).toBe(true);
+  });
+
+  it('is false elsewhere on the circle edge (only one handle, not the whole circumference)', () => {
+    expect(isNearCircleHandle({ x: 100, y: 150 }, circle, 1)).toBe(false); // bottom of the circle
+  });
+
+  it('is false at the center', () => {
+    expect(isNearCircleHandle({ x: 100, y: 100 }, circle, 1)).toBe(false);
   });
 });

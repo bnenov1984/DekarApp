@@ -41,6 +41,45 @@ function createSquare(id: string): void {
   );
 }
 
+function createRectangle(id: string): void {
+  executeCommand((surface) =>
+    createMeasurementCommand({
+      surface,
+      layerId: 'layer1',
+      measurementId: id,
+      shapeParams: { type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50 },
+      identity: { name: 'Rect', color: '#1565C0' },
+      provenance: 'Manual',
+    }),
+  );
+}
+
+function createCircle(id: string): void {
+  executeCommand((surface) =>
+    createMeasurementCommand({
+      surface,
+      layerId: 'layer1',
+      measurementId: id,
+      shapeParams: { type: 'circle', center: { x: 100, y: 100 }, radius: 50 },
+      identity: { name: 'Circle', color: '#E65100' },
+      provenance: 'Manual',
+    }),
+  );
+}
+
+function createLine(id: string): void {
+  executeCommand((surface) =>
+    createMeasurementCommand({
+      surface,
+      layerId: 'layer1',
+      measurementId: id,
+      shapeParams: { type: 'line', from: { x: 0, y: 0 }, to: { x: 100, y: 0 } },
+      identity: { name: 'Line', color: '#4E342E' },
+      provenance: 'Manual',
+    }),
+  );
+}
+
 function measurementShape(id: string) {
   return get(activeSurface)!.layers[0]!.measurements.find((m) => m.id === id)!.shape;
 }
@@ -60,18 +99,17 @@ describe('entering and exiting', () => {
     expect(get(selectedMeasurementId)).toBe('m1');
   });
 
-  it('enterVertexEditing no-ops for shape types with no editable point list', () => {
-    executeCommand((surface) =>
-      createMeasurementCommand({
-        surface,
-        layerId: 'layer1',
-        measurementId: 'r1',
-        shapeParams: { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 10 },
-        identity: { name: 'Rect', color: '#1565C0' },
-        provenance: 'Manual',
-      }),
-    );
-    expect(enterVertexEditing('r1')).toBe(false);
+  it('enterVertexEditing succeeds for every shape type (broadened for resize/move)', () => {
+    createRectangle('r1');
+    createCircle('c1');
+    createLine('l1');
+    expect(enterVertexEditing('r1')).toBe(true);
+    expect(enterVertexEditing('c1')).toBe(true);
+    expect(enterVertexEditing('l1')).toBe(true);
+  });
+
+  it('enterVertexEditing returns false for a measurement id that does not exist', () => {
+    expect(enterVertexEditing('nonexistent')).toBe(false);
     expect(get(vertexEditingId)).toBeNull();
   });
 
@@ -218,5 +256,135 @@ describe('Alt+click deletes a vertex', () => {
     // one more attempt must be silently rejected (18 §6 TOO_FEW_VERTICES)
     pointerDown({ x: 0, y: 100 }, { shiftKey: false, altKey: true });
     expect(measurementShape('m1')).toEqual(shapeAtFloor);
+  });
+});
+
+describe('rectangle corner resize', () => {
+  beforeEach(() => {
+    createRectangle('r1'); // origin (0,0), 100x50
+    enterVertexEditing('r1');
+  });
+
+  it('dragging a corner resizes, keeping the diagonally opposite corner fixed', () => {
+    pointerDown({ x: 0, y: 0 }, NO_MOD); // corner 0
+    pointerMove({ x: -20, y: -10 }, NO_MOD);
+    pointerUp();
+
+    expect(measurementShape('r1')).toEqual({
+      type: 'rectangle',
+      origin: { x: -20, y: -10 },
+      width: 120,
+      height: 60,
+      rotation: 0,
+    });
+  });
+
+  it('is undoable', () => {
+    pointerDown({ x: 0, y: 0 }, NO_MOD);
+    pointerMove({ x: -20, y: -10 }, NO_MOD);
+    pointerUp();
+
+    undo();
+    expect(measurementShape('r1')).toEqual({ type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 });
+  });
+
+  it('a degenerate resize (corner dragged past its opposite) freezes at the last valid preview', () => {
+    pointerDown({ x: 0, y: 0 }, NO_MOD);
+    pointerMove({ x: 50, y: 10 }, NO_MOD); // valid: width shrinks to 50
+    const validDrag = get(vertexDrag);
+
+    pointerMove({ x: 100, y: 50 }, NO_MOD); // degenerate: collapses exactly onto the opposite corner
+    expect(get(vertexDrag)).toEqual(validDrag);
+  });
+});
+
+describe('circle radius resize', () => {
+  beforeEach(() => {
+    createCircle('c1'); // center (100,100), radius 50
+    enterVertexEditing('c1');
+  });
+
+  it('dragging the edge handle resizes the radius', () => {
+    pointerDown({ x: 150, y: 100 }, NO_MOD); // handle at center.x+radius
+    pointerMove({ x: 180, y: 100 }, NO_MOD);
+    pointerUp();
+
+    expect(measurementShape('c1')).toEqual({ type: 'circle', center: { x: 100, y: 100 }, radius: 80 });
+  });
+
+  it('is undoable', () => {
+    pointerDown({ x: 150, y: 100 }, NO_MOD);
+    pointerMove({ x: 180, y: 100 }, NO_MOD);
+    pointerUp();
+
+    undo();
+    expect(measurementShape('c1')).toEqual({ type: 'circle', center: { x: 100, y: 100 }, radius: 50 });
+  });
+});
+
+describe('whole-shape move (all shape types)', () => {
+  it('moves a Rectangle by dragging its body', () => {
+    createRectangle('r1');
+    enterVertexEditing('r1');
+    pointerDown({ x: 50, y: 25 }, NO_MOD); // interior, not a corner
+    pointerMove({ x: 60, y: 45 }, NO_MOD); // +10,+20
+    pointerUp();
+
+    expect(measurementShape('r1')).toEqual({ type: 'rectangle', origin: { x: 10, y: 20 }, width: 100, height: 50, rotation: 0 });
+  });
+
+  it('moves a Circle by dragging its body', () => {
+    createCircle('c1');
+    enterVertexEditing('c1');
+    pointerDown({ x: 100, y: 100 }, NO_MOD); // center — well inside, not the edge handle
+    pointerMove({ x: 105, y: 105 }, NO_MOD);
+    pointerUp();
+
+    expect(measurementShape('c1')).toEqual({ type: 'circle', center: { x: 105, y: 105 }, radius: 50 });
+  });
+
+  it('moves a Polygon by dragging its interior (not a vertex or edge)', () => {
+    createSquare('m1'); // (0,0)-(100,0)-(100,100)-(0,100)
+    enterVertexEditing('m1');
+    pointerDown({ x: 50, y: 50 }, NO_MOD); // dead center — far from any vertex/edge
+    pointerMove({ x: 60, y: 60 }, NO_MOD);
+    pointerUp();
+
+    expect(measurementShape('m1')).toEqual({
+      type: 'polygon',
+      vertices: [{ x: 10, y: 10 }, { x: 110, y: 10 }, { x: 110, y: 110 }, { x: 10, y: 110 }],
+    });
+  });
+
+  it('moves a Line by dragging near its path', () => {
+    createLine('l1'); // (0,0)-(100,0)
+    enterVertexEditing('l1');
+    pointerDown({ x: 50, y: 2 }, NO_MOD); // near the path, within tolerance
+    pointerMove({ x: 50, y: 12 }, NO_MOD); // +0,+10
+    pointerUp();
+
+    expect(measurementShape('l1')).toEqual({ type: 'line', from: { x: 0, y: 10 }, to: { x: 100, y: 10 } });
+  });
+
+  it('a click without drag commits nothing (avoids a no-op undo entry)', () => {
+    createRectangle('r1');
+    enterVertexEditing('r1');
+    const before = measurementShape('r1');
+    pointerDown({ x: 50, y: 25 }, NO_MOD);
+    pointerUp(); // no pointerMove in between — dx/dy stay 0
+
+    expect(measurementShape('r1')).toEqual(before);
+  });
+
+  it('is undoable', () => {
+    createRectangle('r1');
+    enterVertexEditing('r1');
+    const before = measurementShape('r1');
+    pointerDown({ x: 50, y: 25 }, NO_MOD);
+    pointerMove({ x: 60, y: 45 }, NO_MOD);
+    pointerUp();
+
+    undo();
+    expect(measurementShape('r1')).toEqual(before);
   });
 });

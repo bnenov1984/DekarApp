@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { addVertex, create, editVertex, removeVertex } from './drawingEngine.js';
-import type { PolygonShape } from '../domain/types.js';
+import { addVertex, create, editVertex, removeVertex, resizeRectangleCorner, resizeCircleRadius, translateShape } from './drawingEngine.js';
+import type { CircleShape, LineShape, PolygonShape, RectangleShape } from '../domain/types.js';
 
 describe('create', () => {
   it('creates a valid polygon', () => {
@@ -109,6 +109,99 @@ describe('removeVertex — INV-1 support, normal user-reachable outcomes are Res
   it('throws for an out-of-range vertexIndex', () => {
     const shape = create({ type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] });
     expect(() => removeVertex(shape, 99)).toThrow();
+  });
+});
+
+describe('resizeRectangleCorner — whole-shape resize, requested alongside whole-shape move', () => {
+  const rect: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 };
+
+  it('resizes by dragging a corner, keeping the diagonally opposite corner fixed', () => {
+    const resized = resizeRectangleCorner(rect, 0, { x: -20, y: -10 });
+    expect(resized).toEqual({ type: 'rectangle', origin: { x: -20, y: -10 }, width: 120, height: 60, rotation: 0 });
+
+    // the fixed corner (opposite of 0, i.e. corner 2) must be at the same world position before/after
+    const oppositeBefore = { x: rect.origin.x + rect.width, y: rect.origin.y + rect.height };
+    const oppositeAfter = { x: resized.origin.x + resized.width, y: resized.origin.y + resized.height };
+    expect(oppositeAfter).toEqual(oppositeBefore);
+  });
+
+  it('accounts for rotation — the opposite corner stays fixed in world space even when rotated', () => {
+    const rotated: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 10, rotation: Math.PI / 2 };
+    // corner 2 (local (10,10)) in world space, rotated 90°: (0 - 10, 0 + 10) = (-10, 10)
+    const oppositeWorldBefore = { x: -10, y: 10 };
+
+    // drag corner 0 (local (0,0), world (0,0)) somewhere — corner 2 must still land at the same world point
+    const resized = resizeRectangleCorner(rotated, 0, { x: 1, y: 1 });
+    const cos = Math.cos(rotated.rotation);
+    const sin = Math.sin(rotated.rotation);
+    const oppositeWorldAfter = {
+      x: resized.origin.x + resized.width * cos - resized.height * sin,
+      y: resized.origin.y + resized.width * sin + resized.height * cos,
+    };
+    expect(oppositeWorldAfter.x).toBeCloseTo(oppositeWorldBefore.x, 8);
+    expect(oppositeWorldAfter.y).toBeCloseTo(oppositeWorldBefore.y, 8);
+  });
+
+  it('throws when a corner collapses exactly onto its diagonally opposite corner', () => {
+    expect(() => resizeRectangleCorner(rect, 0, { x: 100, y: 50 })).toThrow();
+  });
+
+  it('dragging a corner past its opposite corner flips the rectangle to the other side (still valid)', () => {
+    // corner 0 dragged beyond corner 2 (100,50) — min/max-based, so this is a valid, larger
+    // rectangle on the far side, not a degenerate one.
+    const resized = resizeRectangleCorner(rect, 0, { x: 150, y: 80 });
+    expect(resized).toEqual({ type: 'rectangle', origin: { x: 100, y: 50 }, width: 50, height: 30, rotation: 0 });
+  });
+});
+
+describe('resizeCircleRadius', () => {
+  const circle: CircleShape = { type: 'circle', center: { x: 100, y: 100 }, radius: 50 };
+
+  it('sets the radius to the distance from center to the drag position', () => {
+    const resized = resizeCircleRadius(circle, { x: 180, y: 100 });
+    expect(resized).toEqual({ type: 'circle', center: { x: 100, y: 100 }, radius: 80 });
+  });
+
+  it('throws for a zero-radius result (drag position == center)', () => {
+    expect(() => resizeCircleRadius(circle, { x: 100, y: 100 })).toThrow();
+  });
+});
+
+describe('translateShape — rigid transform, never throws, applies to every Shape variant', () => {
+  it('translates a Polygon', () => {
+    const shape: PolygonShape = { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] };
+    expect(translateShape(shape, 5, -5)).toEqual({
+      type: 'polygon',
+      vertices: [{ x: 5, y: -5 }, { x: 15, y: -5 }, { x: 15, y: 5 }],
+    });
+  });
+
+  it('translates a Rectangle (origin only — width/height/rotation unchanged)', () => {
+    const shape: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 5, rotation: 0.3 };
+    expect(translateShape(shape, 2, 3)).toEqual({ type: 'rectangle', origin: { x: 2, y: 3 }, width: 10, height: 5, rotation: 0.3 });
+  });
+
+  it('translates a Circle (center only)', () => {
+    const shape: CircleShape = { type: 'circle', center: { x: 0, y: 0 }, radius: 5 };
+    expect(translateShape(shape, 1, 1)).toEqual({ type: 'circle', center: { x: 1, y: 1 }, radius: 5 });
+  });
+
+  it('translates a Line (both endpoints)', () => {
+    const shape: LineShape = { type: 'line', from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
+    expect(translateShape(shape, -1, 4)).toEqual({ type: 'line', from: { x: -1, y: 4 }, to: { x: 9, y: 4 } });
+  });
+
+  it('translates a Curve and a Freehand (both point-list shapes)', () => {
+    const curve = create({ type: 'curve', controlPoints: [{ x: 0, y: 0 }, { x: 1, y: 1 }] });
+    expect(translateShape(curve, 1, 1)).toEqual({ type: 'curve', controlPoints: [{ x: 1, y: 1 }, { x: 2, y: 2 }], closed: false });
+
+    const freehand = create({ type: 'freehand', points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] });
+    expect(translateShape(freehand, 2, 2)).toEqual({ type: 'freehand', points: [{ x: 2, y: 2 }, { x: 3, y: 3 }], closed: false });
+  });
+
+  it('never throws, even for a degenerate (zero) translation', () => {
+    const shape: CircleShape = { type: 'circle', center: { x: 0, y: 0 }, radius: 5 };
+    expect(() => translateShape(shape, 0, 0)).not.toThrow();
   });
 });
 
