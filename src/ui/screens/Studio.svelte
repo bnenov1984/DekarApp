@@ -3,6 +3,7 @@
   // the Windows redo convention) routed through the studioSession store. MeasurementList (left
   // panel, 15 §2.2 "ляво=данни") sits beside CanvasStage in the main row — it renders nothing of
   // its own when there are zero measurements (component-internal empty state, 15 §15).
+  import CalibrationBar from '../components/CalibrationBar.svelte';
   import CanvasStage from '../components/CanvasStage.svelte';
   import MeasurementList from '../components/MeasurementList.svelte';
   import StatusBar from '../components/StatusBar.svelte';
@@ -10,6 +11,7 @@
   import { appState, goHome } from '../stores/appState.js';
   import { redo, undo } from '../stores/studioSession.js';
   import { handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
+  import { calibrating, cancelCalibration } from '../stores/calibrationSession.js';
 
   // 15_UX_SPECIFICATION.md §13 — single-key tool shortcuts (V/R/P/C/F/D). Pan/Curve/AI keys are
   // absent because those tools don't exist this slice (docs/UI_CHECKPOINT_REVIEW.md next-slice
@@ -25,7 +27,10 @@
 
   function isTypingTarget(target: EventTarget | null): boolean {
     const tag = (target as HTMLElement | null)?.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA';
+    // 'SELECT' included for the calibration unit dropdown (CanvasStage.svelte) — without it, a
+    // native typeahead keypress there (e.g. "f" to jump to the "ft" option) would also fire the
+    // Freehand tool shortcut below.
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
   }
 
   function onKeydown(event: KeyboardEvent): void {
@@ -48,9 +53,18 @@
     if (isTypingTarget(event.target)) return;
 
     if (event.key === 'Escape') {
+      // Harmless no-op on whichever of the two isn't currently active (drawingSession.handleEscape
+      // clears a null draft silently; cancelCalibration is a no-op when `calibrating` is false).
+      cancelCalibration();
       handleEscape();
       return;
     }
+
+    // Calibration and drawing never interleave (Tool Dock is disabled while calibrating,
+    // ToolDock.svelte) — block tool shortcuts/Enter/snap-toggle here too so a keypress outside
+    // the calibration input can't arm a drawing tool mid-calibration.
+    if ($calibrating) return;
+
     if (event.key === 'Enter') {
       handleEnter();
       return;
@@ -72,6 +86,7 @@
 
 <div class="shell">
   <TopBar projectName={$appState.project?.name ?? null} onBack={goHome} />
+  <CalibrationBar />
   <div class="main">
     <MeasurementList />
     <CanvasStage />

@@ -191,3 +191,24 @@ export function drawInProgress(
 
   if (snapTargetValue) drawSnapGlyph(ctx, snapTargetValue, accentColor);
 }
+
+/** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
+ * visual language as `drawInProgress` (dashed, accent-colored) but never a Measurement preview —
+ * this line never reaches `computeMeasurementDisplay`, only `CalibrationService`. */
+export function drawCalibrationLine(
+  ctx: CanvasRenderingContext2D,
+  from: Point,
+  to: Point | null,
+  accentColor: string,
+): void {
+  if (!to) return;
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = accentColor;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.restore();
+}

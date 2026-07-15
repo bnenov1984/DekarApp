@@ -6,6 +6,7 @@
   // between breakpoints" invariant is about not *redesigning* the dock, not about shipping every
   // slot on day one.
   import { activeTool, setTool, type DrawingTool } from '../stores/drawingSession.js';
+  import { calibrating } from '../stores/calibrationSession.js';
 
   interface ToolSpec {
     readonly id: DrawingTool;
@@ -48,6 +49,7 @@
       class:active={$activeTool === tool.id}
       title="{tool.label} ({tool.shortcut})"
       aria-pressed={$activeTool === tool.id}
+      disabled={$calibrating}
       data-testid="tool-{tool.id}"
       on:click={(event) => onToolClick(tool.id, event)}
     >
@@ -95,6 +97,11 @@
   .slot.active {
     background: color-mix(in srgb, var(--af-accent) 14%, transparent);
     color: var(--af-accent);
+  }
+
+  .slot:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .glyph {

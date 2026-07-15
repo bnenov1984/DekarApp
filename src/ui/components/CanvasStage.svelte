@@ -6,7 +6,7 @@
   // Surface space == CSS-pixel canvas space for now (no pan/zoom/calibration-to-screen mapping
   // yet — that's a disclosed, later concern; nothing in 21 §6 requires it to exist before shapes
   // can render and be selected).
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { activeSurface, selectedMeasurementId, selectMeasurementAt } from '../stores/studioSession.js';
   import {
     activeTool,
@@ -18,7 +18,18 @@
     handleEnter,
     snapTarget,
   } from '../stores/drawingSession.js';
-  import { drawSurface, drawInProgress } from '../rendering/sceneRenderer.js';
+  import {
+    calibrating,
+    calibrationDraft,
+    calibrationCursor,
+    calibrationSnapTarget,
+    pointerDown as calibrationPointerDown,
+    pointerMove as calibrationPointerMove,
+    commitCalibration,
+    cancelCalibration,
+    type CalibrationUnit,
+  } from '../stores/calibrationSession.js';
+  import { drawSurface, drawInProgress, drawCalibrationLine } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
   import type { Point, Shape } from '../../core/domain/types.js';
@@ -59,6 +70,9 @@
     }
     drawSurface(ctx, surface, $selectedMeasurementId, widthCss, heightCss, readAccentColor());
     drawInProgress(ctx, $drawingDraft, $cursorSurfacePoint, $snapTarget, readAccentColor());
+    if ($calibrationDraft) {
+      drawCalibrationLine(ctx, $calibrationDraft.from, $calibrationDraft.to ?? $calibrationCursor, readAccentColor());
+    }
   }
 
   function resizeToContainer(): void {
@@ -82,24 +96,36 @@
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
-  // Click-to-select (21 §6.3) only applies to the Select tool — with a drawing tool armed,
-  // mousedown/mousemove/mouseup below own the interaction (docs/18_DRAWING_ENGINE.md).
+  // Click-to-select (21 §6.3) only applies to the Select tool, and never while calibrating (Tool
+  // Dock is disabled then too, ToolDock.svelte) — with a drawing tool armed, mousedown/mousemove/
+  // mouseup below own the interaction (docs/18_DRAWING_ENGINE.md).
   function onClick(event: MouseEvent): void {
-    if ($activeTool !== 'select') return;
+    if ($calibrating || $activeTool !== 'select') return;
     selectMeasurementAt(toSurfacePoint(event));
   }
 
   function onMouseDown(event: MouseEvent): void {
+    const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey };
+    if ($calibrating) {
+      calibrationPointerDown(toSurfacePoint(event), modifiers);
+      return;
+    }
     if ($activeTool === 'select') return;
-    pointerDown(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
+    pointerDown(toSurfacePoint(event), modifiers);
   }
 
   function onMouseMove(event: MouseEvent): void {
+    const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey };
+    if ($calibrating) {
+      calibrationPointerMove(toSurfacePoint(event), modifiers);
+      return;
+    }
     if ($activeTool === 'select') return;
-    pointerMove(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
+    pointerMove(toSurfacePoint(event), modifiers);
   }
 
   function onMouseUp(event: MouseEvent): void {
+    if ($calibrating) return; // calibration is click-click (pointerDown only), no drag semantics
     if ($activeTool === 'select') return;
     pointerUp(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
   }
@@ -119,6 +145,9 @@
     draft: $drawingDraft,
     cursor: $cursorSurfacePoint,
     snap: $snapTarget,
+    calibrationDraft: $calibrationDraft,
+    calibrationCursor: $calibrationCursor,
+    calibrationSnap: $calibrationSnapTarget,
   };
   $: if (ctx && renderSignal) redraw();
 
@@ -164,6 +193,44 @@
     ? computeMeasurementDisplay(previewShapeValue, $activeSurface?.calibration ?? null).primaryLabel
     : '';
   $: previewLabelPos = $drawingDraft?.kind === 'drag' ? $drawingDraft.current : $cursorSurfacePoint;
+
+  // 15 W3 — "This line is [value] [unit▾] ⏎ Set scale", anchored to the placed line's midpoint
+  // rather than W3's fixed banner position (CalibrationBar.svelte only carries the
+  // instruction/Redraw/Cancel row — see that file's header for why).
+  let calibrationValue = '';
+  let calibrationUnit: CalibrationUnit = 'm';
+  let calibrationInputEl: HTMLInputElement | undefined;
+
+  $: calibrationInputPos = $calibrationDraft?.to
+    ? { x: (($calibrationDraft.from.x + $calibrationDraft.to.x) / 2), y: (($calibrationDraft.from.y + $calibrationDraft.to.y) / 2) }
+    : null;
+
+  // Focus the field the instant it appears (a11y lint disallows the `autofocus` attribute — this
+  // is the manual equivalent, triggered by the user's own two-click action, same "focus follows
+  // the action just taken" category as an opened dialog's first field).
+  $: if (calibrationInputPos) {
+    tick().then(() => calibrationInputEl?.focus());
+  }
+
+  function submitCalibration(): void {
+    const value = Number.parseFloat(calibrationValue);
+    if (!(value > 0)) return;
+    commitCalibration(value, calibrationUnit, widthCss, heightCss);
+    calibrationValue = '';
+  }
+
+  function onCalibrationInputKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitCalibration();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelCalibration();
+      calibrationValue = '';
+    }
+  }
+
+  $: if (!calibrationInputPos) calibrationValue = '';
 
   // Chips are a DOM projection of the same Measurement data the canvas draws (21 §6.3 "one
   // source, two projections" — never a second, divergent model). Surface-space == CSS-pixel
@@ -219,6 +286,30 @@
       {previewLabel}
     </div>
   {/if}
+  {#if calibrationInputPos}
+    <form
+      class="calibration-input"
+      style="left: {calibrationInputPos.x}px; top: {calibrationInputPos.y}px;"
+      data-testid="calibration-input"
+      on:submit|preventDefault={submitCalibration}
+    >
+      <span class="calibration-input-label">This line is</span>
+      <input
+        type="number"
+        min="0"
+        step="any"
+        bind:this={calibrationInputEl}
+        bind:value={calibrationValue}
+        on:keydown={onCalibrationInputKeydown}
+        data-testid="calibration-value"
+      />
+      <select bind:value={calibrationUnit} data-testid="calibration-unit">
+        <option value="m">m</option>
+        <option value="ft">ft</option>
+      </select>
+      <button type="submit" data-testid="calibration-set-scale">⏎ Set scale</button>
+    </form>
+  {/if}
   <ToolDock />
 </div>
 
@@ -253,5 +344,54 @@
     font-variant-numeric: tabular-nums;
     color: var(--af-accent);
     white-space: nowrap;
+  }
+
+  .calibration-input {
+    position: absolute;
+    transform: translate(-50%, 14px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--af-surface-raised);
+    border-radius: var(--af-radius-sm);
+    box-shadow: var(--af-shadow-e2);
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  .calibration-input-label {
+    font-size: 12px;
+    color: var(--af-ink-secondary);
+  }
+
+  .calibration-input input {
+    width: 64px;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 6px;
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    background: var(--af-surface-panel);
+    color: var(--af-ink-primary);
+  }
+
+  .calibration-input select {
+    font: inherit;
+    padding: 3px 4px;
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    background: var(--af-surface-panel);
+    color: var(--af-ink-primary);
+  }
+
+  .calibration-input button {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--af-accent-ink);
+    background: var(--af-accent);
+    border: none;
+    border-radius: var(--af-radius-sm);
+    padding: 4px 8px;
+    cursor: pointer;
   }
 </style>
