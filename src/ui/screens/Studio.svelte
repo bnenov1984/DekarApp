@@ -11,7 +11,7 @@
   import StatusBar from '../components/StatusBar.svelte';
   import TopBar from '../components/TopBar.svelte';
   import { appState, goHome } from '../stores/appState.js';
-  import { redo, undo, selectedMeasurementId } from '../stores/studioSession.js';
+  import { redo, undo, selectedMeasurementId, deleteSelectedMeasurement } from '../stores/studioSession.js';
   import { activeTool, handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
   import { calibrating, cancelCalibration } from '../stores/calibrationSession.js';
   import { vertexEditingId, exitVertexEditing } from '../stores/vertexEditSession.js';
@@ -74,6 +74,16 @@
     if (event.key === 'Enter') {
       handleEnter();
       confirmSplit(); // no-op unless a split line already crosses the boundary exactly twice
+      return;
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !$splittingId) {
+      // 15 §13 — deletes the selected Measurement. Split-parent/split-child/plain lifecycle
+      // rules already live in deleteMeasurementCommand (11 §4); this just also exits vertex-edit
+      // mode if the deleted measurement was the one being edited (harmless no-op otherwise).
+      // preventDefault: Backspace outside a text field is the browser's "navigate back" shortcut.
+      event.preventDefault();
+      deleteSelectedMeasurement();
+      exitVertexEditing();
       return;
     }
     if (event.key.toLowerCase() === 's') {

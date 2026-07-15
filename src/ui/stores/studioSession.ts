@@ -4,6 +4,7 @@ import type { Measurement, MeasurementId, Surface } from '../../core/domain/enti
 import { hitTestShape } from '../../core/drawing/hitTest.js';
 import type { Point } from '../../core/domain/types.js';
 import { surfaceRepository, persist } from './persistence.js';
+import { deleteMeasurementCommand } from '../../application/commands/deleteMeasurement.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
 // import; the reverse would fail the ESLint boundaries rule). One CommandStack per Project
@@ -109,6 +110,18 @@ export function redo(): void {
   refreshUndoState();
 }
 
+/** 11 §4 — deletes the currently selected Measurement, if any (no-op otherwise). Split-parent/
+ * split-child/plain-measurement lifecycle rules all already live in `deleteMeasurementCommand`
+ * itself (cascade to children / dissolve the group for siblings / plain removal) — this only
+ * resolves "which id" from the current selection and clears it afterward, since whatever was
+ * selected is now guaranteed gone (a cascade-deleted child could never still be the selection). */
+export function deleteSelectedMeasurement(): void {
+  const id = get(selectedMeasurementId);
+  if (!id) return;
+  executeCommand((surface) => deleteMeasurementCommand({ surface, measurementId: id }));
+  selectedMeasurementId.set(null);
+}
+
 /** PD-012 D6 — "no Save button": every settled mutation (execute/undo/redo) persists
  * fire-and-forget, never blocking the UI thread. Failures surface non-blockingly via
  * `persistence.ts`'s `storageErrorMessage`, not a thrown error back into caller code. */
@@ -131,6 +144,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       selectedMeasurementId,
       selectMeasurementAt,
       selectMeasurement,
+      deleteSelectedMeasurement,
       get,
     },
   });

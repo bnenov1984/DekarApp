@@ -6,8 +6,9 @@
   //
   // Renders nothing when there's no selection (same "component-internal empty state" pattern as
   // MeasurementList.svelte, 15 §15).
-  import { activeSurface, selectedMeasurementId, executeCommand } from '../stores/studioSession.js';
+  import { activeSurface, selectedMeasurementId, executeCommand, deleteSelectedMeasurement } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
+  import { exitVertexEditing } from '../stores/vertexEditSession.js';
   import { computeMeasurementDisplay, formatLengthValue } from '../measurement/computeDisplay.js';
   import type { MeasurementIdentity } from '../../core/domain/entities.js';
 
@@ -70,11 +71,31 @@
     if (!measurement) return;
     if (noteDraft !== (measurement.identity.note ?? '')) commitIdentity({ note: noteDraft });
   }
+
+  // 11 §4 — deleteMeasurementCommand already owns the split-parent/split-child/plain lifecycle
+  // rules; this button (and the Delete/Backspace shortcut, Studio.svelte) just triggers it for
+  // the current selection. No confirmation dialog (15 §16: "изтриване без потвърждаващ диалог —
+  // Undo покрива грешките"), matching every other deletion in this product (vertex delete, etc).
+  function onDeleteClick(): void {
+    deleteSelectedMeasurement();
+    exitVertexEditing();
+  }
 </script>
 
 {#if measurement}
   <div class="panel" data-testid="property-panel">
-    <div class="header">Properties</div>
+    <div class="header-row">
+      <span class="header">Properties</span>
+      <button
+        type="button"
+        class="delete-button"
+        title="Delete (Backspace)"
+        on:click={onDeleteClick}
+        data-testid="delete-measurement"
+      >
+        Delete
+      </button>
+    </div>
 
     <section class="section">
       <input
@@ -147,10 +168,31 @@
     overflow: auto;
   }
 
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .header {
     font-size: 12.5px;
     font-weight: 600;
     color: var(--af-ink-primary);
+  }
+
+  .delete-button {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--af-danger);
+    background: none;
+    border: none;
+    padding: 3px 6px;
+    border-radius: var(--af-radius-sm);
+    cursor: pointer;
+  }
+
+  .delete-button:hover {
+    background: var(--af-surface-app);
   }
 
   .section {
