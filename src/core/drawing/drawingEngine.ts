@@ -1,4 +1,4 @@
-import type { Point, Shape } from '../domain/types.js';
+import type { CircleShape, Point, RectangleShape, Shape } from '../domain/types.js';
 import { type Result, fail, ok } from '../domain/types.js';
 import { isSimplePolygon } from './geometry.js';
 
@@ -138,4 +138,81 @@ export function removeVertex(shape: Shape, vertexIndex: number): Result<Shape, I
   if (shape.type === 'polygon' && !isSimplePolygon(next)) return fail('WOULD_SELF_INTERSECT');
 
   return ok(withPoints(shape, next));
+}
+
+/** 0=origin corner, 1=+width, 2=+width+height, 3=+height (local, unrotated) — matches
+ * `formulas.ts`'s `rectangleCorners` winding order, and `hitTest.ts`'s `findRectangleCornerAt`
+ * returns indices in this same order. */
+export type RectangleCorner = 0 | 1 | 2 | 3;
+
+/** Resizes a Rectangle by dragging one corner, keeping the diagonally opposite corner fixed —
+ * the standard resize convention. Correctly accounts for rotation (always 0 today, no rotation
+ * UI exists yet, but this stays correct if that ever changes): `newPosition` is transformed into
+ * the rectangle's local unrotated frame using the exact inverse of `formulas.ts`'s
+ * `rectangleCorners` transform (same convention `hitTest.ts`'s `pointInRectangle` already uses),
+ * resized in that frame, then the new origin is transformed back. Throws on a degenerate result
+ * (width/height ≤ 0), same "structural precondition" convention as `create`/`editVertex`. */
+export function resizeRectangleCorner(shape: RectangleShape, corner: RectangleCorner, newPosition: Point): RectangleShape {
+  const { origin, width, height, rotation } = shape;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const dx = newPosition.x - origin.x;
+  const dy = newPosition.y - origin.y;
+  const localX = dx * cos + dy * sin;
+  const localY = -dx * sin + dy * cos;
+
+  const localCorners: readonly Point[] = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+  const opposite = localCorners[(corner + 2) % 4]!;
+
+  const minX = Math.min(localX, opposite.x);
+  const maxX = Math.max(localX, opposite.x);
+  const minY = Math.min(localY, opposite.y);
+  const maxY = Math.max(localY, opposite.y);
+  const newWidth = maxX - minX;
+  const newHeight = maxY - minY;
+  if (newWidth <= 0 || newHeight <= 0) {
+    throw new Error('resizeRectangleCorner: resulting rectangle must have positive width/height');
+  }
+
+  const newOrigin: Point = {
+    x: origin.x + minX * cos - minY * sin,
+    y: origin.y + minX * sin + minY * cos,
+  };
+
+  return { ...shape, origin: newOrigin, width: newWidth, height: newHeight };
+}
+
+/** Resizes a Circle by dragging its edge handle — radius becomes the distance from center to the
+ * drag position. Throws on a degenerate (zero) radius. */
+export function resizeCircleRadius(shape: CircleShape, newEdgePosition: Point): CircleShape {
+  const radius = Math.hypot(newEdgePosition.x - shape.center.x, newEdgePosition.y - shape.center.y);
+  if (radius <= 0) throw new Error('resizeCircleRadius: radius must be positive');
+  return { ...shape, radius };
+}
+
+/** Translates any Shape by a rigid (dx, dy) offset — a rigid transform can never create a
+ * self-intersection or invalidate any other shape invariant, so unlike every other mutation in
+ * this file, this never throws. Applies uniformly to all six Shape variants (18 §6 whole-shape
+ * move, requested to cover every shape type, not just the ones with vertex-level editing). */
+export function translateShape(shape: Shape, dx: number, dy: number): Shape {
+  const shift = (p: Point): Point => ({ x: p.x + dx, y: p.y + dy });
+  switch (shape.type) {
+    case 'polygon':
+      return { ...shape, vertices: shape.vertices.map(shift) };
+    case 'rectangle':
+      return { ...shape, origin: shift(shape.origin) };
+    case 'circle':
+      return { ...shape, center: shift(shape.center) };
+    case 'curve':
+      return { ...shape, controlPoints: shape.controlPoints.map(shift) };
+    case 'freehand':
+      return { ...shape, points: shape.points.map(shift) };
+    case 'line':
+      return { ...shape, from: shift(shape.from), to: shift(shape.to) };
+  }
 }

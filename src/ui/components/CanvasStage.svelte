@@ -194,9 +194,10 @@
     pointerUp(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
   }
 
-  // 15 §14.4 "Двоен клик" — over a shape enters vertex editing (Polygon/Curve/Freehand only,
-  // enterVertexEditing itself no-ops for Rectangle/Circle/Line); over a Polygon being drawn,
-  // closes it regardless of self-snap proximity (§5 F1 step 6) instead.
+  // 15 §14.4 "Двоен клик" — over a shape enters manipulation mode (vertex/edge drag for Polygon/
+  // Curve/Freehand, corner/radius resize for Rectangle/Circle, whole-shape move for all six,
+  // vertexEditSession.ts); over a Polygon being drawn, closes it regardless of self-snap
+  // proximity (§5 F1 step 6) instead.
   function onDblClick(event: MouseEvent): void {
     if ($calibrating || $splittingId) return;
     if ($activeTool === 'polygon') {

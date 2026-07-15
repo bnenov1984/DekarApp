@@ -1,5 +1,7 @@
-import type { Point, Shape } from '../domain/types.js';
+import type { CircleShape, Point, RectangleShape, Shape } from '../domain/types.js';
 import { distance, nearestPointOnSegment } from './geometry.js';
+import { rectangleCorners } from '../measurement/formulas.js';
+import type { RectangleCorner } from './drawingEngine.js';
 
 // docs/21_ARCHITECTURE.md §6.3 — hit-testing is "custom" (Canvas has no per-shape DOM events)
 // but is pure geometry, so it lives in Core like everything else Drawing-Engine-adjacent
@@ -121,4 +123,27 @@ export function findEdgeAt(point: Point, shape: Shape, tolerance: number): numbe
     if (distance(point, nearest) <= tolerance) return i;
   }
   return null;
+}
+
+// Resize handle hit-testing (whole-shape resize, requested alongside whole-shape move) — separate
+// from `findVertexAt`/`findEdgeAt` above since Rectangle/Circle are parametric (no point list);
+// these check the shape's *derived* handle positions instead.
+
+/** Returns the index (0-3, `rectangleCorners`' winding order, `formulas.ts`) of the corner within
+ * `tolerance` of `point`, or `null`. Corner indices match `drawingEngine.ts`'s `RectangleCorner`
+ * (`resizeRectangleCorner`'s "which corner is being dragged" parameter). */
+export function findRectangleCornerAt(point: Point, shape: RectangleShape, tolerance: number): RectangleCorner | null {
+  const corners = rectangleCorners(shape.origin, shape.width, shape.height, shape.rotation);
+  for (let i = 0; i < corners.length; i++) {
+    if (distance(point, corners[i]!) <= tolerance) return i as RectangleCorner;
+  }
+  return null;
+}
+
+/** True if `point` is within `tolerance` of the Circle's single resize handle — its rightmost
+ * point (`center.x + radius, center.y`), matching where `sceneRenderer.ts` already starts
+ * drawing the circle's stroke path, so the handle sits exactly on the visible outline. */
+export function isNearCircleHandle(point: Point, shape: CircleShape, tolerance: number): boolean {
+  const handle = { x: shape.center.x + shape.radius, y: shape.center.y };
+  return distance(point, handle) <= tolerance;
 }

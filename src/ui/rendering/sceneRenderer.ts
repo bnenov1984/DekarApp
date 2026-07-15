@@ -2,6 +2,7 @@ import type { Measurement, Surface } from '../../core/domain/entities.js';
 import type { Point, Shape } from '../../core/domain/types.js';
 import type { SnapTarget } from '../../core/drawing/snap.js';
 import type { DrawingDraft } from '../stores/drawingSession.js';
+import { rectangleCorners } from '../../core/measurement/formulas.js';
 
 // docs/21_ARCHITECTURE.md §6.2/§6.3 — the scene graph: a *derived* projection of Shape VOs onto
 // Canvas2D draw calls. This module never mutates a Shape and never owns geometry — it only
@@ -192,13 +193,14 @@ export function drawInProgress(
   if (snapTargetValue) drawSnapGlyph(ctx, snapTargetValue, accentColor);
 }
 
-/** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
- * visual language as `drawInProgress` (dashed, accent-colored) but never a Measurement preview —
- * this line never reaches `computeMeasurementDisplay`, only `CalibrationService`. */
-// docs/18_DRAWING_ENGINE.md §6 — vertex editing handles. Same shape-type restriction as
-// hitTest.ts's `findVertexAt`/`findEdgeAt` (Polygon/Curve/Freehand only); a local switch rather
-// than importing hitTest.ts's private helper, matching this file's existing `pathForShape` style.
-function editablePointsForHandles(shape: Shape): readonly Point[] | null {
+// docs/18_DRAWING_ENGINE.md §6 — vertex/resize handle positions. Polygon/Curve/Freehand expose
+// every point as a draggable vertex (unchanged); Rectangle exposes its 4 corners (resize, fixed
+// opposite corner — `drawingEngine.ts`'s `resizeRectangleCorner`); Circle exposes 1 handle at its
+// rightmost point (resize — `resizeCircleRadius`), matching where `pathForShape` above starts
+// drawing the circle's own stroke. Line has none (whole-shape move only this slice, no dedicated
+// resize handle requested) — a local switch rather than importing hitTest.ts's private helper,
+// matching this file's existing `pathForShape` style.
+function resizeHandlePoints(shape: Shape): readonly Point[] | null {
   switch (shape.type) {
     case 'polygon':
       return shape.vertices;
@@ -206,6 +208,10 @@ function editablePointsForHandles(shape: Shape): readonly Point[] | null {
       return shape.controlPoints;
     case 'freehand':
       return shape.points;
+    case 'rectangle':
+      return rectangleCorners(shape.origin, shape.width, shape.height, shape.rotation);
+    case 'circle':
+      return [{ x: shape.center.x + shape.radius, y: shape.center.y }];
     default:
       return null;
   }
@@ -213,10 +219,11 @@ function editablePointsForHandles(shape: Shape): readonly Point[] | null {
 
 const VERTEX_HANDLE_SIZE = 4;
 
-/** Small filled squares (white-ringed for contrast over any fill color) at every editable
- * vertex — the "vertex-editing: върхове като дръжки" state from 16 §3.1 MeasurementShape. */
+/** Small filled squares (white-ringed for contrast over any fill color) at every vertex/corner/
+ * radius handle — the "vertex-editing: върхове като дръжки" state from 16 §3.1 MeasurementShape,
+ * extended to Rectangle corners and Circle's radius handle. */
 export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, accentColor: string): void {
-  const points = editablePointsForHandles(shape);
+  const points = resizeHandlePoints(shape);
   if (!points) return;
   ctx.save();
   ctx.fillStyle = accentColor;
@@ -283,6 +290,9 @@ export function drawSplitPreview(
   }
 }
 
+/** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
+ * visual language as `drawInProgress` (dashed, accent-colored) but never a Measurement preview —
+ * this line never reaches `computeMeasurementDisplay`, only `CalibrationService`. */
 export function drawCalibrationLine(
   ctx: CanvasRenderingContext2D,
   from: Point,
