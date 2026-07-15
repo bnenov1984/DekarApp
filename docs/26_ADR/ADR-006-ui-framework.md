@@ -32,3 +32,13 @@
 ## Отворено за следваща UI задача
 
 Конкретна state management стратегия за "текущия Surface" (Svelte stores срещу context API) — избира се при "integrate CommandStack" стъпката, не тук.
+
+## Addendum (2026-07-14) — Module-level Svelte stores, не context API
+
+**Контекст.** Горният отворен въпрос е решен в `feat(ui): integrate CommandStack` (`72cb087`) — `src/ui/stores/studioSession.ts` — но решението никога не е било backfill-нато тук, констатирано като docs drift в `docs/UI_CHECKPOINT_REVIEW.md` §8.
+
+**Решение.** **Module-level Svelte stores** (`writable` на файлово ниво), не context API.
+
+**Обосновка:** сесията е app-глобална по дефиниция (един отворен проект наведнъж, 15 §4 — два екрана, без паралелни студия); клавишни shortcuts и бъдещи overlays (⌘K) се нуждаят от достъп извън Studio component tree-то; store-овете са plain TS — тествани в vitest без монтиране на компоненти (същата логика приложена и за `src/ui/stores/drawingSession.ts`, Tool Dock слайса).
+
+**Статус:** Accepted, формализирано като addendum (не нов ADR — локална прецизация на същия избор, не нова посока).
