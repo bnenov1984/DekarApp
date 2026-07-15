@@ -8,6 +8,8 @@ import {
   executeCommand,
   initStudioSession,
   redo,
+  selectedMeasurementId,
+  selectMeasurementAt,
   undo,
 } from './studioSession.js';
 import { createMeasurementCommand } from '../../application/commands/createMeasurement.js';
@@ -119,5 +121,42 @@ describe('studioSession', () => {
     expect(() => undo()).not.toThrow();
     expect(() => redo()).not.toThrow();
     expect(get(activeSurface)).toBeNull();
+  });
+});
+
+describe('studioSession — selection (UI commit 4, 21 §6.3)', () => {
+  beforeEach(() => {
+    initStudioSession(blankSurface());
+  });
+
+  it('selects the measurement under a hit point', () => {
+    executeCommand(buildCreateSquare('m1')); // 10x10 square at origin
+    selectMeasurementAt({ x: 5, y: 5 });
+    expect(get(selectedMeasurementId)).toBe('m1');
+  });
+
+  it('clears selection when clicking empty space', () => {
+    executeCommand(buildCreateSquare('m1'));
+    selectMeasurementAt({ x: 5, y: 5 });
+    expect(get(selectedMeasurementId)).toBe('m1');
+
+    selectMeasurementAt({ x: 500, y: 500 });
+    expect(get(selectedMeasurementId)).toBeNull();
+  });
+
+  it('picks the topmost measurement on overlap', () => {
+    executeCommand(buildCreateSquare('m1')); // 0,0 - 10,10
+    executeCommand(buildCreateSquare('m2')); // also 0,0 - 10,10, drawn after -> on top
+    selectMeasurementAt({ x: 5, y: 5 });
+    expect(get(selectedMeasurementId)).toBe('m2');
+  });
+
+  it('initStudioSession clears any prior selection', () => {
+    executeCommand(buildCreateSquare('m1'));
+    selectMeasurementAt({ x: 5, y: 5 });
+    expect(get(selectedMeasurementId)).toBe('m1');
+
+    initStudioSession(blankSurface());
+    expect(get(selectedMeasurementId)).toBeNull();
   });
 });

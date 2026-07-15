@@ -1,6 +1,8 @@
 import { writable, get } from 'svelte/store';
 import { CommandStack, type Command } from '../../application/commandStack.js';
-import type { Surface } from '../../core/domain/entities.js';
+import type { Measurement, MeasurementId, Surface } from '../../core/domain/entities.js';
+import { hitTestShape } from '../../core/drawing/hitTest.js';
+import type { Point } from '../../core/domain/types.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
 // import; the reverse would fail the ESLint boundaries rule). One CommandStack per Project
@@ -16,6 +18,7 @@ import type { Surface } from '../../core/domain/entities.js';
 export const activeSurface = writable<Surface | null>(null);
 export const canUndo = writable(false);
 export const canRedo = writable(false);
+export const selectedMeasurementId = writable<MeasurementId | null>(null);
 
 let stack: CommandStack | null = null;
 
@@ -27,13 +30,38 @@ function refreshUndoState(): void {
 export function initStudioSession(surface: Surface): void {
   stack = new CommandStack();
   activeSurface.set(surface);
+  selectedMeasurementId.set(null);
   refreshUndoState();
 }
 
 export function endStudioSession(): void {
   stack = null;
   activeSurface.set(null);
+  selectedMeasurementId.set(null);
   refreshUndoState();
+}
+
+function allMeasurements(surface: Surface): Measurement[] {
+  return surface.layers.flatMap((l) => l.measurements);
+}
+
+/** 21 §6.3 — hit-testing lives against the Surface-space point the caller (CanvasStage) already
+ * converted from screen coordinates. Topmost-drawn wins on overlap (last in render order, i.e.
+ * last layer's last measurement) — matches ordinary z-order expectations. `null` clears
+ * selection (click on empty canvas). Tolerance is in Surface units, not screen pixels — the
+ * caller is responsible for that conversion once zoom exists (not yet, 21 §3 open item). */
+export function selectMeasurementAt(point: Point, tolerance = 4): void {
+  const surface = get(activeSurface);
+  if (!surface) return;
+  const measurements = allMeasurements(surface);
+  for (let i = measurements.length - 1; i >= 0; i--) {
+    const measurement = measurements[i]!;
+    if (hitTestShape(point, measurement.shape, tolerance)) {
+      selectedMeasurementId.set(measurement.id);
+      return;
+    }
+  }
+  selectedMeasurementId.set(null);
 }
 
 /**
@@ -71,6 +99,16 @@ export function redo(): void {
 // dead-code elimination (import.meta.env.DEV is statically false there). Not a public API.
 if (import.meta.env?.DEV && typeof window !== 'undefined') {
   Object.assign(window as object, {
-    __areaflowDev: { executeCommand, undo, redo, activeSurface, canUndo, canRedo, get },
+    __areaflowDev: {
+      executeCommand,
+      undo,
+      redo,
+      activeSurface,
+      canUndo,
+      canRedo,
+      selectedMeasurementId,
+      selectMeasurementAt,
+      get,
+    },
   });
 }
