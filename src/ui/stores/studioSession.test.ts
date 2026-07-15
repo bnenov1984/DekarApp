@@ -4,15 +4,18 @@ import {
   activeSurface,
   canRedo,
   canUndo,
+  deleteSelectedMeasurement,
   endStudioSession,
   executeCommand,
   initStudioSession,
   redo,
   selectedMeasurementId,
+  selectMeasurement,
   selectMeasurementAt,
   undo,
 } from './studioSession.js';
 import { createMeasurementCommand } from '../../application/commands/createMeasurement.js';
+import { splitCommand } from '../../application/commands/split.js';
 import type { Surface } from '../../core/domain/entities.js';
 
 // UI-layer session store exercised with a REAL Application command (not a mock) — this is the
@@ -158,5 +161,80 @@ describe('studioSession — selection (UI commit 4, 21 §6.3)', () => {
 
     initStudioSession(blankSurface());
     expect(get(selectedMeasurementId)).toBeNull();
+  });
+});
+
+// 11 §4 lifecycle rules — deleteMeasurementCommand already owns them (deleteMeasurement.ts);
+// this only checks that deleteSelectedMeasurement resolves "which id" from selection correctly
+// and clears the selection afterward, for all three cases (plain / split parent / split child).
+describe('studioSession — deleteSelectedMeasurement', () => {
+  beforeEach(() => {
+    initStudioSession(blankSurface());
+  });
+
+  it('is a no-op when nothing is selected', () => {
+    executeCommand(buildCreateSquare('m1'));
+    deleteSelectedMeasurement();
+    expect(get(activeSurface)!.layers[0]!.measurements).toHaveLength(1);
+  });
+
+  it('deletes a plain measurement and clears the selection', () => {
+    executeCommand(buildCreateSquare('m1'));
+    selectMeasurement('m1');
+
+    deleteSelectedMeasurement();
+
+    expect(get(activeSurface)!.layers[0]!.measurements).toHaveLength(0);
+    expect(get(selectedMeasurementId)).toBeNull();
+  });
+
+  it('deleting a split PARENT cascades to remove its children too', () => {
+    executeCommand(buildCreateSquare('parcel'));
+    executeCommand((surface) =>
+      splitCommand({
+        surface,
+        parentMeasurementId: 'parcel',
+        splitLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        childIds: ['child1', 'child2'],
+      }),
+    );
+    expect(get(activeSurface)!.layers[0]!.measurements).toHaveLength(3);
+
+    selectMeasurement('parcel');
+    deleteSelectedMeasurement();
+
+    expect(get(activeSurface)!.layers[0]!.measurements).toHaveLength(0);
+    expect(get(selectedMeasurementId)).toBeNull();
+  });
+
+  it('deleting a split CHILD dissolves the group for its sibling, leaving the parent untouched', () => {
+    executeCommand(buildCreateSquare('parcel'));
+    executeCommand((surface) =>
+      splitCommand({
+        surface,
+        parentMeasurementId: 'parcel',
+        splitLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        childIds: ['child1', 'child2'],
+      }),
+    );
+
+    selectMeasurement('child1');
+    deleteSelectedMeasurement();
+
+    const remaining = get(activeSurface)!.layers[0]!.measurements;
+    expect(remaining.map((m) => m.id)).toEqual(['parcel', 'child2']);
+    expect(remaining.find((m) => m.id === 'child2')!.parentId).toBeUndefined(); // group dissolved
+    expect(get(selectedMeasurementId)).toBeNull();
+  });
+
+  it('is undoable — restores the exact prior surface', () => {
+    executeCommand(buildCreateSquare('m1'));
+    const beforeDelete = get(activeSurface);
+    selectMeasurement('m1');
+
+    deleteSelectedMeasurement();
+    undo();
+
+    expect(get(activeSurface)).toEqual(beforeDelete);
   });
 });
