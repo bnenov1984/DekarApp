@@ -9,6 +9,7 @@ import {
   executeCommand,
   initStudioSession,
   redo,
+  reorderMeasurements,
   selectedMeasurementId,
   selectMeasurement,
   selectMeasurementAt,
@@ -236,5 +237,39 @@ describe('studioSession — deleteSelectedMeasurement', () => {
     undo();
 
     expect(get(activeSurface)).toEqual(beforeDelete);
+  });
+});
+
+// Layers panel drag-to-reorder (PO request) — reorderMeasurementsCommand already owns the
+// front-to-back-reverses-into-raw-order logic (reorderMeasurements.ts); this only checks the
+// store wiring: undo restores exact prior order, selection is left untouched by a reorder.
+describe('studioSession — reorderMeasurements', () => {
+  beforeEach(() => {
+    initStudioSession(blankSurface());
+  });
+
+  it('changes the raw draw order and is undoable back to the exact prior surface', () => {
+    executeCommand(buildCreateSquare('a'));
+    executeCommand(buildCreateSquare('b'));
+    executeCommand(buildCreateSquare('c'));
+    const beforeReorder = get(activeSurface)!;
+    expect(beforeReorder.layers[0]!.measurements.map((m) => m.id)).toEqual(['a', 'b', 'c']);
+
+    reorderMeasurements(['a', 'c', 'b']); // drag 'a' to the front of the panel
+
+    expect(get(activeSurface)!.layers[0]!.measurements.map((m) => m.id)).toEqual(['b', 'c', 'a']);
+
+    undo();
+    expect(get(activeSurface)).toEqual(beforeReorder);
+  });
+
+  it('leaves the current selection untouched', () => {
+    executeCommand(buildCreateSquare('a'));
+    executeCommand(buildCreateSquare('b'));
+    selectMeasurement('a');
+
+    reorderMeasurements(['b', 'a']);
+
+    expect(get(selectedMeasurementId)).toBe('a');
   });
 });

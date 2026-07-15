@@ -8,6 +8,7 @@ import { removeVertexCommand } from './removeVertex.js';
 import { splitCommand } from './split.js';
 import { recalibrateCommand } from './recalibrate.js';
 import { updateIdentityCommand } from './updateIdentity.js';
+import { reorderMeasurementsCommand } from './reorderMeasurements.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { findMeasurement } from '../surfaceOps.js';
 import type { Surface } from '../../core/domain/entities.js';
@@ -298,6 +299,42 @@ describe('Recalibrate — round trip', () => {
 
     expect(stack.undo<Surface>()).toEqual(initial);
     expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+});
+
+describe('ReorderMeasurements — Layers panel drag-to-reorder round trip', () => {
+  it('front-to-back UI order reverses into the raw draw order; undo/redo exact', () => {
+    const a = makeSquareMeasurement('a', 0);
+    const b = makeSquareMeasurement('b', 20);
+    const c = makeSquareMeasurement('c', 40);
+    const initial = makeTestSurface([a, b, c]); // raw order a, b, c — c currently drawn last (on top)
+    const stack = new CommandStack();
+
+    // User drags 'a' to the very top of the panel (front-most) — new panel order: a, c, b.
+    const mutated = stack.execute(
+      reorderMeasurementsCommand({ surface: initial, orderedIdsFrontToBack: ['a', 'c', 'b'] }),
+    );
+    // Reversed into raw draw order: b, c, a — 'a' is now drawn last (on top), matching the drag.
+    expect(mutated.layers[0]!.measurements.map((m) => m.id)).toEqual(['b', 'c', 'a']);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('only reorders measurements within their own layer', () => {
+    const a = makeSquareMeasurement('a', 0);
+    const b = makeSquareMeasurement('b', 20);
+    const layer1 = { id: 'layer1', name: 'Default', visible: true, order: 0, measurements: [a, b] };
+    const c = makeSquareMeasurement('c', 40);
+    const layer2 = { id: 'layer2', name: 'Second', visible: true, order: 1, measurements: [c] };
+    const initial = { id: 'surface1', kind: 'image' as const, calibration: null, layers: [layer1, layer2] };
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(
+      reorderMeasurementsCommand({ surface: initial, orderedIdsFrontToBack: ['c', 'a', 'b'] }),
+    );
+    expect(mutated.layers[0]!.measurements.map((m) => m.id)).toEqual(['b', 'a']);
+    expect(mutated.layers[1]!.measurements.map((m) => m.id)).toEqual(['c']);
   });
 });
 
