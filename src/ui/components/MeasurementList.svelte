@@ -8,7 +8,9 @@
   // container) when there are zero measurements — per 15 §15, "най-добрият празен панел е
   // никакъв", the empty state is showing nothing rather than an empty list shell.
   import { activeSurface, selectedMeasurementId, selectMeasurement } from '../stores/studioSession.js';
+  import { childrenOf } from '../../application/surfaceOps.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
+  import type { Measurement } from '../../core/domain/entities.js';
   import type { Unit } from '../../core/domain/types.js';
 
   interface Row {
@@ -18,9 +20,15 @@
     readonly primaryLabel: string;
     readonly area: number | undefined;
     readonly unit: Unit | undefined;
+    /** nesting level — 0 for a top-level measurement, incremented per Split generation (a
+     * re-split child, "3-part split", reaches depth 2). Drives indentation. */
+    readonly depth: number;
+    /** true only for a Split parent (has children) — 15 §5 F7 step 5 groups it with its parts;
+     * excluded from the total-area sum below since its area already equals theirs (INV-4). */
+    readonly isSplitParent: boolean;
   }
 
-  $: rows = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? []).map((measurement): Row => {
+  function toRow(measurement: Measurement, depth: number, isSplitParent: boolean): Row {
     const display = computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration);
     return {
       id: measurement.id,
@@ -29,11 +37,27 @@
       primaryLabel: display.primaryLabel,
       area: display.values.area,
       unit: display.values.area !== undefined ? display.values.unit : undefined,
+      depth,
+      isSplitParent,
     };
-  });
+  }
 
-  $: totalArea = rows.reduce((sum, r) => sum + (r.area ?? 0), 0);
-  $: totalUnit = rows.find((r) => r.unit)?.unit;
+  // 15 §5 F7 step 5 — "Parcel ▸ Part 1 / Part 2 / Part 3": every measurement is followed
+  // immediately by its Split children, if any (childrenOf, surfaceOps.ts) — recursive, since a
+  // re-split child (3-part split, PD-009) has its own children in turn.
+  function buildRows(measurement: Measurement, depth: number): Row[] {
+    const children = $activeSurface ? childrenOf($activeSurface, measurement.id) : [];
+    return [toRow(measurement, depth, children.length > 0), ...children.flatMap((c) => buildRows(c, depth + 1))];
+  }
+
+  $: rows = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? [])
+    .filter((m) => !m.parentId)
+    .flatMap((parent) => buildRows(parent, 0));
+
+  // Σ Total area excludes Split parents — by construction (INV-4) a parent's area already equals
+  // the sum of its children's, so including both would double-count.
+  $: totalArea = rows.filter((r) => !r.isSplitParent).reduce((sum, r) => sum + (r.area ?? 0), 0);
+  $: totalUnit = rows.find((r) => !r.isSplitParent && r.unit)?.unit;
   $: totalLabel = totalUnit ? `${Math.round(totalArea)} ${totalUnit === 'px' ? 'px²' : totalUnit === 'm2' ? 'm²' : totalUnit}` : '';
 </script>
 
@@ -47,8 +71,11 @@
             type="button"
             class="row"
             class:selected={row.id === $selectedMeasurementId}
+            class:child={row.depth > 0}
+            style={row.depth > 0 ? `padding-left: ${9 + row.depth * 22}px` : undefined}
             on:click={() => selectMeasurement(row.id)}
           >
+            {#if row.depth > 0}<span class="child-marker" aria-hidden="true">▸</span>{/if}
             <span class="swatch" style="background: {row.color}"></span>
             <span class="name">{row.name}</span>
             <span class="value">{row.primaryLabel}</span>
@@ -120,6 +147,12 @@
   .row:focus-visible {
     outline: 2px solid var(--af-accent);
     outline-offset: -2px;
+  }
+
+  .child-marker {
+    color: var(--af-ink-tertiary);
+    font-size: 11px;
+    margin-right: -3px;
   }
 
   .swatch {

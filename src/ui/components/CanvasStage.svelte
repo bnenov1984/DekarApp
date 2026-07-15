@@ -39,10 +39,26 @@
     pointerMove as vertexPointerMove,
     pointerUp as vertexPointerUp,
   } from '../stores/vertexEditSession.js';
-  import { drawSurface, drawInProgress, drawCalibrationLine, drawVertexHandles, drawVertexEditPreview } from '../rendering/sceneRenderer.js';
+  import {
+    splittingId,
+    splitLinePoints,
+    splitCursor,
+    pointerDown as splitPointerDown,
+    pointerMove as splitPointerMove,
+    cancelSplit,
+  } from '../stores/splitSession.js';
+  import { canSplit, split } from '../../core/drawing/split.js';
+  import {
+    drawSurface,
+    drawInProgress,
+    drawCalibrationLine,
+    drawVertexHandles,
+    drawVertexEditPreview,
+    drawSplitPreview,
+  } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
-  import type { Point, Shape } from '../../core/domain/types.js';
+  import type { Point, PolygonShape, Shape } from '../../core/domain/types.js';
   import type { DrawingDraft } from '../stores/drawingSession.js';
   import MeasurementChip from './MeasurementChip.svelte';
   import ToolDock from './ToolDock.svelte';
@@ -91,6 +107,13 @@
         if (editing) drawVertexHandles(ctx, editing.shape, readAccentColor());
       }
     }
+    if ($splittingId) {
+      const splitLine = $splitCursor ? [...$splitLinePoints, $splitCursor] : $splitLinePoints;
+      const splitting = surface.layers.flatMap((l) => l.measurements).find((m) => m.id === $splittingId);
+      const shape = splitting && splitting.shape.type === 'polygon' ? splitting.shape : null;
+      const result = shape && splitLine.length >= 2 && canSplit(shape, splitLine) ? split(shape, splitLine) : null;
+      drawSplitPreview(ctx, splitLine, result?.ok ? result.value : null, readAccentColor());
+    }
   }
 
   function resizeToContainer(): void {
@@ -120,7 +143,7 @@
   // drawing tool armed, mousedown/mousemove/mouseup below own the interaction instead
   // (docs/18_DRAWING_ENGINE.md).
   function onClick(event: MouseEvent): void {
-    if ($calibrating || $vertexEditingId || $activeTool !== 'select') return;
+    if ($calibrating || $vertexEditingId || $splittingId || $activeTool !== 'select') return;
     selectMeasurementAt(toSurfacePoint(event));
   }
 
@@ -132,6 +155,10 @@
     }
     if ($vertexEditingId && $activeTool === 'select') {
       vertexPointerDown(toSurfacePoint(event), modifiers);
+      return;
+    }
+    if ($splittingId && $activeTool === 'select') {
+      splitPointerDown(toSurfacePoint(event));
       return;
     }
     if ($activeTool === 'select') return;
@@ -148,6 +175,10 @@
       vertexPointerMove(toSurfacePoint(event), modifiers);
       return;
     }
+    if ($splittingId && $activeTool === 'select') {
+      splitPointerMove(toSurfacePoint(event));
+      return;
+    }
     if ($activeTool === 'select') return;
     pointerMove(toSurfacePoint(event), modifiers);
   }
@@ -158,6 +189,7 @@
       vertexPointerUp();
       return;
     }
+    if ($splittingId && $activeTool === 'select') return; // splitting is click-to-place, no drag
     if ($activeTool === 'select') return;
     pointerUp(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
   }
@@ -166,7 +198,7 @@
   // enterVertexEditing itself no-ops for Rectangle/Circle/Line); over a Polygon being drawn,
   // closes it regardless of self-snap proximity (§5 F1 step 6) instead.
   function onDblClick(event: MouseEvent): void {
-    if ($calibrating) return;
+    if ($calibrating || $splittingId) return;
     if ($activeTool === 'polygon') {
       handleEnter();
       return;
@@ -191,13 +223,39 @@
     calibrationSnap: $calibrationSnapTarget,
     vertexEditingId: $vertexEditingId,
     vertexDrag: $vertexDrag,
+    splittingId: $splittingId,
+    splitLinePoints: $splitLinePoints,
+    splitCursor: $splitCursor,
   };
   $: if (ctx && renderSignal) redraw();
 
   // Switching away from Select (Tool Dock click or keyboard shortcut, both funnel through
-  // drawingSession.setTool) implicitly exits vertex-edit mode — avoids a stale `vertexEditingId`
-  // silently resuming if the user later switches back to Select without an explicit Esc.
+  // drawingSession.setTool) implicitly exits vertex-edit mode / cancels an in-progress split —
+  // avoids stale state silently resuming if the user later switches back to Select without an
+  // explicit Esc.
   $: if ($activeTool !== 'select' && $vertexEditingId) exitVertexEditing();
+  $: if ($activeTool !== 'select' && $splittingId) cancelSplit();
+
+  // 15 §5 F7 step 3 — live dual-area ghost labels, one per resulting child, once the split line
+  // crosses the parent boundary exactly twice (canSplit). Recomputed here (not read from
+  // redraw()'s own inline computation) purely for the floating DOM labels below; the canvas ghost
+  // outlines themselves are drawn by drawSplitPreview inside redraw().
+  $: splitPreviewChildren = ((): readonly [Shape, Shape] | null => {
+    if (!$splittingId || !$activeSurface) return null;
+    const splitting = $activeSurface.layers.flatMap((l) => l.measurements).find((m) => m.id === $splittingId);
+    const shape = splitting && splitting.shape.type === 'polygon' ? (splitting.shape as PolygonShape) : null;
+    if (!shape) return null;
+    const line = $splitCursor ? [...$splitLinePoints, $splitCursor] : $splitLinePoints;
+    if (line.length < 2 || !canSplit(shape, line)) return null;
+    const result = split(shape, line);
+    return result.ok ? result.value : null;
+  })();
+
+  $: splitLabels = (splitPreviewChildren ?? []).map((child) => {
+    const { x, y } = shapeCentroid(child);
+    const { primaryLabel } = computeMeasurementDisplay(child, $activeSurface?.calibration ?? null);
+    return { x, y, primaryLabel };
+  });
 
   // Live numeric feedback while drawing (15 §5 F1 step 5/§14.2) — built from a synthetic Shape
   // that never goes through drawingEngine.create() (only commit does, drawingSession.ts); this is
@@ -358,6 +416,11 @@
       <button type="submit" data-testid="calibration-set-scale">⏎ Set scale</button>
     </form>
   {/if}
+  {#each splitLabels as label, i (i)}
+    <div class="draft-label" style="left: {label.x}px; top: {label.y}px;" data-testid="split-label-{i}">
+      {label.primaryLabel}
+    </div>
+  {/each}
   <ToolDock />
 </div>
 

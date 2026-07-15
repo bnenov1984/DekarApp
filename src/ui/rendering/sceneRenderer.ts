@@ -246,6 +246,43 @@ export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShap
   drawVertexHandles(ctx, previewShape, accentColor);
 }
 
+/** docs/18_DRAWING_ENGINE.md §5 (PD-009) / 15 W5-style ghost — the Split line plus, once it
+ * crosses the parent boundary exactly twice (`canSplit`, split.ts), both resulting child shapes
+ * as dashed outlines. `children` is `null` until that condition holds — matches
+ * `drawInProgress`/`drawCalibrationLine`'s "only render what's actually valid so far" discipline. */
+export function drawSplitPreview(
+  ctx: CanvasRenderingContext2D,
+  splitLine: readonly Point[],
+  children: readonly [Shape, Shape] | null,
+  accentColor: string,
+): void {
+  if (splitLine.length >= 2) {
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = accentColor;
+    ctx.beginPath();
+    const [first, ...rest] = splitLine;
+    ctx.moveTo(first!.x, first!.y);
+    for (const p of rest) ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (children) {
+    for (const child of children) {
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = accentColor;
+      ctx.beginPath();
+      pathForShape(ctx, child);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
 export function drawCalibrationLine(
   ctx: CanvasRenderingContext2D,
   from: Point,

@@ -7,6 +7,7 @@
   // slot on day one.
   import { activeTool, setTool, type DrawingTool } from '../stores/drawingSession.js';
   import { calibrating } from '../stores/calibrationSession.js';
+  import { splittingId } from '../stores/splitSession.js';
 
   interface ToolSpec {
     readonly id: DrawingTool;
@@ -49,7 +50,7 @@
       class:active={$activeTool === tool.id}
       title="{tool.label} ({tool.shortcut})"
       aria-pressed={$activeTool === tool.id}
-      disabled={$calibrating}
+      disabled={$calibrating || !!$splittingId}
       data-testid="tool-{tool.id}"
       on:click={(event) => onToolClick(tool.id, event)}
     >

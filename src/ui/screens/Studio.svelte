@@ -11,10 +11,11 @@
   import StatusBar from '../components/StatusBar.svelte';
   import TopBar from '../components/TopBar.svelte';
   import { appState, goHome } from '../stores/appState.js';
-  import { redo, undo } from '../stores/studioSession.js';
-  import { handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
+  import { redo, undo, selectedMeasurementId } from '../stores/studioSession.js';
+  import { activeTool, handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
   import { calibrating, cancelCalibration } from '../stores/calibrationSession.js';
-  import { exitVertexEditing } from '../stores/vertexEditSession.js';
+  import { vertexEditingId, exitVertexEditing } from '../stores/vertexEditSession.js';
+  import { splittingId, startSplit, cancelSplit, confirmSplit } from '../stores/splitSession.js';
 
   // 15_UX_SPECIFICATION.md §13 — single-key tool shortcuts (V/R/P/C/F/D). Pan/Curve/AI keys are
   // absent because those tools don't exist this slice (docs/UI_CHECKPOINT_REVIEW.md next-slice
@@ -56,11 +57,12 @@
     if (isTypingTarget(event.target)) return;
 
     if (event.key === 'Escape') {
-      // Harmless no-op on whichever of the three isn't currently active (drawingSession.handleEscape
-      // clears a null draft silently; cancelCalibration/exitVertexEditing are no-ops when not active).
+      // Harmless no-op on whichever of the four isn't currently active (drawingSession.handleEscape
+      // clears a null draft silently; the other three cancel/exit functions are no-ops when not active).
       cancelCalibration();
       handleEscape();
       exitVertexEditing();
+      cancelSplit();
       return;
     }
 
@@ -71,10 +73,19 @@
 
     if (event.key === 'Enter') {
       handleEnter();
+      confirmSplit(); // no-op unless a split line already crosses the boundary exactly twice
       return;
     }
     if (event.key.toLowerCase() === 's') {
       toggleSnap();
+      return;
+    }
+    if (event.key.toLowerCase() === 'x') {
+      // 15 §13 / §5 F7 — Split a selected Polygon. Guarded against vertex-editing/already-
+      // splitting so `X` can't stack sessions; startSplit itself no-ops for non-Polygon shapes.
+      if ($activeTool === 'select' && !$vertexEditingId && !$splittingId && $selectedMeasurementId) {
+        startSplit($selectedMeasurementId);
+      }
       return;
     }
 
