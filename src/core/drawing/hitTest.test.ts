@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitTestShape } from './hitTest.js';
+import { hitTestShape, findVertexAt, findEdgeAt } from './hitTest.js';
 import type { CircleShape, LineShape, PolygonShape, RectangleShape } from '../domain/types.js';
 
 const square: PolygonShape = {
@@ -80,5 +80,56 @@ describe('hitTestShape — freehand', () => {
     };
     expect(hitTestShape({ x: 2, y: 8 }, shape, 0.5)).toBe(false); // inside bbox, far from the L-path
     expect(hitTestShape({ x: 5, y: 0.1 }, shape, 0.5)).toBe(true);
+  });
+});
+
+// docs/18_DRAWING_ENGINE.md §6 — vertex-editing hit tests, restricted to Polygon/Curve/Freehand
+// (the shapes with an editable point list, same restriction drawingEngine.ts's addVertex/
+// editVertex enforce). Used by vertexEditSession.ts to decide vertex-drag vs. edge-insert-drag.
+
+describe('findVertexAt', () => {
+  it('finds the index of a vertex within tolerance', () => {
+    expect(findVertexAt({ x: 10.2, y: 0.1 }, square, 1)).toBe(1); // (10,0) is index 1
+  });
+
+  it('returns null when no vertex is within tolerance', () => {
+    expect(findVertexAt({ x: 5, y: 5 }, square, 1)).toBeNull();
+  });
+
+  it('returns null for shape types with no editable point list', () => {
+    const rect: RectangleShape = { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 5, rotation: 0 };
+    const circle: CircleShape = { type: 'circle', center: { x: 0, y: 0 }, radius: 5 };
+    const line: LineShape = { type: 'line', from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
+    expect(findVertexAt({ x: 0, y: 0 }, rect, 1)).toBeNull();
+    expect(findVertexAt({ x: 0, y: 0 }, circle, 1)).toBeNull();
+    expect(findVertexAt({ x: 0, y: 0 }, line, 1)).toBeNull();
+  });
+});
+
+describe('findEdgeAt', () => {
+  it('finds the index of the edge (start-vertex index) within tolerance', () => {
+    // square vertices: (0,0)=0, (10,0)=1, (10,10)=2, (0,10)=3 — the top edge is index 0 (0->1)
+    expect(findEdgeAt({ x: 5, y: 0.2 }, square, 1)).toBe(0);
+    // right edge (10,0)->(10,10) is index 1
+    expect(findEdgeAt({ x: 9.8, y: 5 }, square, 1)).toBe(1);
+  });
+
+  it('returns null when no edge is within tolerance', () => {
+    expect(findEdgeAt({ x: 5, y: 5 }, square, 1)).toBeNull();
+  });
+
+  it('respects open (non-closed) shapes — no wraparound edge from last to first point', () => {
+    const openFreehand = {
+      type: 'freehand' as const,
+      points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+      closed: false,
+    };
+    // the "closing" edge (10,10)->(0,0) would exist if this were treated as closed; it isn't.
+    expect(findEdgeAt({ x: 5, y: 5 }, openFreehand, 1)).toBeNull();
+  });
+
+  it('returns null for shape types with no editable point list', () => {
+    const circle: CircleShape = { type: 'circle', center: { x: 0, y: 0 }, radius: 5 };
+    expect(findEdgeAt({ x: 5, y: 0 }, circle, 1)).toBeNull();
   });
 });

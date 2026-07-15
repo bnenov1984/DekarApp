@@ -7,6 +7,7 @@ import { editVertexCommand } from './editVertex.js';
 import { removeVertexCommand } from './removeVertex.js';
 import { splitCommand } from './split.js';
 import { recalibrateCommand } from './recalibrate.js';
+import { updateIdentityCommand } from './updateIdentity.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { findMeasurement } from '../surfaceOps.js';
 import type { Surface } from '../../core/domain/entities.js';
@@ -36,6 +37,36 @@ describe('CreateMeasurement — single command round trip', () => {
 
     const undone = stack.undo<Surface>();
     expect(undone).toEqual(initial); // domain equality — undo() returning the same reference is fine too
+
+    const redone = stack.redo<Surface>();
+    expect(redone).toEqual(mutated);
+  });
+});
+
+describe('UpdateIdentity — single command round trip', () => {
+  it('create → undo → exact initial → redo → exact mutated', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+
+    const cmd = updateIdentityCommand({
+      surface: initial,
+      measurementId: 'm1',
+      identity: { name: 'Backyard', color: '#1565C0', note: 'Needs a fence' },
+    });
+
+    const mutated = stack.execute(cmd);
+    expect(findMeasurement(mutated, 'm1')!.measurement.identity).toEqual({
+      name: 'Backyard',
+      color: '#1565C0',
+      note: 'Needs a fence',
+    });
+    // rename/recolor never touches the Shape (18/14 §3 — Identity and Shape are independent VOs)
+    expect(findMeasurement(mutated, 'm1')!.measurement.shape).toEqual(
+      findMeasurement(initial, 'm1')!.measurement.shape,
+    );
+
+    const undone = stack.undo<Surface>();
+    expect(undone).toEqual(initial);
 
     const redone = stack.redo<Surface>();
     expect(redone).toEqual(mutated);
