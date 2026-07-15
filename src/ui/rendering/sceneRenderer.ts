@@ -1,5 +1,7 @@
 import type { Measurement, Surface } from '../../core/domain/entities.js';
 import type { Point, Shape } from '../../core/domain/types.js';
+import type { SnapTarget } from '../../core/drawing/snap.js';
+import type { DrawingDraft } from '../stores/drawingSession.js';
 
 // docs/21_ARCHITECTURE.md §6.2/§6.3 — the scene graph: a *derived* projection of Shape VOs onto
 // Canvas2D draw calls. This module never mutates a Shape and never owns geometry — it only
@@ -99,4 +101,93 @@ export function drawSurface(
       drawMeasurement(ctx, measurement, measurement.id === selectedId, accentColor);
     }
   }
+}
+
+// docs/18_DRAWING_ENGINE.md §4 — Tool Dock in-progress drawing overlay. Ghost/ dashed, never
+// filled like a committed Measurement (15 §14.2/§18 W5 "ghost" visual language reused here for
+// any not-yet-committed shape, not only AI proposals). Draws the placed points/drag rectangle so
+// far plus a look-ahead segment to the live cursor position — never calls drawingEngine.create()
+// or any Measurement Engine formula; this is pure preview, validation only happens at commit
+// (drawingSession.ts).
+function pathForDraft(ctx: CanvasRenderingContext2D, draft: DrawingDraft, cursor: Point | null): boolean {
+  if (draft.kind === 'points') {
+    const [first, ...rest] = draft.points;
+    if (!first) return false;
+    ctx.moveTo(first.x, first.y);
+    for (const p of rest) ctx.lineTo(p.x, p.y);
+    if (cursor) ctx.lineTo(cursor.x, cursor.y);
+    return true;
+  }
+
+  if (draft.tool === 'rectangle') {
+    const x = Math.min(draft.origin.x, draft.current.x);
+    const y = Math.min(draft.origin.y, draft.current.y);
+    const w = Math.abs(draft.current.x - draft.origin.x);
+    const h = Math.abs(draft.current.y - draft.origin.y);
+    ctx.rect(x, y, w, h);
+    return true;
+  }
+
+  // circle
+  const radius = Math.hypot(draft.current.x - draft.origin.x, draft.current.y - draft.origin.y);
+  ctx.moveTo(draft.origin.x + radius, draft.origin.y);
+  ctx.arc(draft.origin.x, draft.origin.y, radius, 0, 2 * Math.PI);
+  return true;
+}
+
+const SNAP_GLYPH_SIZE = 5;
+
+/** 18 §4 — distinct glyph per snap target kind: ◆ vertex/self-close, ▸ edge, ∠ angle. */
+function drawSnapGlyph(ctx: CanvasRenderingContext2D, target: SnapTarget, accentColor: string): void {
+  const { point, kind } = target;
+  ctx.save();
+  ctx.fillStyle = accentColor;
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.5;
+
+  if (kind === 'vertex' || kind === 'self') {
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y - SNAP_GLYPH_SIZE);
+    ctx.lineTo(point.x + SNAP_GLYPH_SIZE, point.y);
+    ctx.lineTo(point.x, point.y + SNAP_GLYPH_SIZE);
+    ctx.lineTo(point.x - SNAP_GLYPH_SIZE, point.y);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'edge') {
+    ctx.beginPath();
+    ctx.moveTo(point.x - SNAP_GLYPH_SIZE, point.y - SNAP_GLYPH_SIZE);
+    ctx.lineTo(point.x + SNAP_GLYPH_SIZE, point.y);
+    ctx.lineTo(point.x - SNAP_GLYPH_SIZE, point.y + SNAP_GLYPH_SIZE);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, SNAP_GLYPH_SIZE, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/** Draws the current draft (if any) plus the active snap-target glyph (if any) on top of the
+ * already-drawn committed Surface (18 §4, 15 W5). Called from CanvasStage's redraw() after
+ * `drawSurface`; never clears the canvas itself. */
+export function drawInProgress(
+  ctx: CanvasRenderingContext2D,
+  draft: DrawingDraft | null,
+  cursor: Point | null,
+  snapTargetValue: SnapTarget | undefined,
+  accentColor: string,
+): void {
+  if (draft) {
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = accentColor;
+    ctx.beginPath();
+    if (pathForDraft(ctx, draft, cursor)) ctx.stroke();
+    ctx.restore();
+  }
+
+  if (snapTargetValue) drawSnapGlyph(ctx, snapTargetValue, accentColor);
 }

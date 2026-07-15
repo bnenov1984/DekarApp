@@ -9,20 +9,61 @@
   import TopBar from '../components/TopBar.svelte';
   import { appState, goHome } from '../stores/appState.js';
   import { redo, undo } from '../stores/studioSession.js';
+  import { handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
+
+  // 15_UX_SPECIFICATION.md §13 — single-key tool shortcuts (V/R/P/C/F/D). Pan/Curve/AI keys are
+  // absent because those tools don't exist this slice (docs/UI_CHECKPOINT_REVIEW.md next-slice
+  // scope note, also in ToolDock.svelte).
+  const TOOL_KEYS: Readonly<Record<string, DrawingTool>> = {
+    v: 'select',
+    r: 'rectangle',
+    p: 'polygon',
+    c: 'circle',
+    f: 'freehand',
+    d: 'line',
+  };
+
+  function isTypingTarget(target: EventTarget | null): boolean {
+    const tag = (target as HTMLElement | null)?.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA';
+  }
 
   function onKeydown(event: KeyboardEvent): void {
     const mod = event.ctrlKey || event.metaKey;
-    if (!mod) return;
-    const key = event.key.toLowerCase();
-    if (key === 'z' && event.shiftKey) {
-      event.preventDefault();
-      redo();
-    } else if (key === 'z') {
-      event.preventDefault();
-      undo();
-    } else if (key === 'y') {
-      event.preventDefault();
-      redo();
+    if (mod) {
+      const key = event.key.toLowerCase();
+      if (key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        redo();
+      } else if (key === 'z') {
+        event.preventDefault();
+        undo();
+      } else if (key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+      return;
+    }
+
+    if (isTypingTarget(event.target)) return;
+
+    if (event.key === 'Escape') {
+      handleEscape();
+      return;
+    }
+    if (event.key === 'Enter') {
+      handleEnter();
+      return;
+    }
+    if (event.key.toLowerCase() === 's') {
+      toggleSnap();
+      return;
+    }
+
+    const tool = TOOL_KEYS[event.key.toLowerCase()];
+    if (tool) {
+      // 15 §14.1 — holding Shift while activating a tool keeps it armed for serial drawing.
+      setTool(tool, { keepArmed: event.shiftKey });
     }
   }
 </script>

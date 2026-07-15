@@ -8,10 +8,23 @@
   // can render and be selected).
   import { onDestroy, onMount } from 'svelte';
   import { activeSurface, selectedMeasurementId, selectMeasurementAt } from '../stores/studioSession.js';
-  import { drawSurface } from '../rendering/sceneRenderer.js';
+  import {
+    activeTool,
+    cursorSurfacePoint,
+    drawingDraft,
+    pointerDown,
+    pointerMove,
+    pointerUp,
+    handleEnter,
+    snapTarget,
+  } from '../stores/drawingSession.js';
+  import { drawSurface, drawInProgress } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
+  import type { Point, Shape } from '../../core/domain/types.js';
+  import type { DrawingDraft } from '../stores/drawingSession.js';
   import MeasurementChip from './MeasurementChip.svelte';
+  import ToolDock from './ToolDock.svelte';
 
   interface ChipData {
     readonly id: string;
@@ -45,6 +58,7 @@
       return;
     }
     drawSurface(ctx, surface, $selectedMeasurementId, widthCss, heightCss, readAccentColor());
+    drawInProgress(ctx, $drawingDraft, $cursorSurfacePoint, $snapTarget, readAccentColor());
   }
 
   function resizeToContainer(): void {
@@ -63,16 +77,93 @@
     redraw();
   }
 
-  function onClick(event: MouseEvent): void {
+  function toSurfacePoint(event: MouseEvent): Point {
     const rect = canvas.getBoundingClientRect();
-    selectMeasurementAt({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  // Click-to-select (21 §6.3) only applies to the Select tool — with a drawing tool armed,
+  // mousedown/mousemove/mouseup below own the interaction (docs/18_DRAWING_ENGINE.md).
+  function onClick(event: MouseEvent): void {
+    if ($activeTool !== 'select') return;
+    selectMeasurementAt(toSurfacePoint(event));
+  }
+
+  function onMouseDown(event: MouseEvent): void {
+    if ($activeTool === 'select') return;
+    pointerDown(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
+  }
+
+  function onMouseMove(event: MouseEvent): void {
+    if ($activeTool === 'select') return;
+    pointerMove(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
+  }
+
+  function onMouseUp(event: MouseEvent): void {
+    if ($activeTool === 'select') return;
+    pointerUp(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
+  }
+
+  // 15 §14.4 "Двоен клик" / §5 F1 step 6 — double-click closes a Polygon regardless of self-snap
+  // proximity to the first vertex.
+  function onDblClick(): void {
+    if ($activeTool === 'polygon') handleEnter();
   }
 
   // Svelte 4 reactive statement: renderSignal's assignment is what declares $activeSurface/
   // $selectedMeasurementId as dependencies (a plain comma-expression would need an eslint
   // exception for an "unused" expression; an assignment doesn't).
-  $: renderSignal = { surface: $activeSurface, selection: $selectedMeasurementId };
+  $: renderSignal = {
+    surface: $activeSurface,
+    selection: $selectedMeasurementId,
+    draft: $drawingDraft,
+    cursor: $cursorSurfacePoint,
+    snap: $snapTarget,
+  };
   $: if (ctx && renderSignal) redraw();
+
+  // Live numeric feedback while drawing (15 §5 F1 step 5/§14.2) — built from a synthetic Shape
+  // that never goes through drawingEngine.create() (only commit does, drawingSession.ts); this is
+  // display-only, same computeMeasurementDisplay used for committed Measurements.
+  function previewShape(draft: DrawingDraft | null, cursor: Point | null): Shape | null {
+    if (!draft) return null;
+
+    if (draft.kind === 'drag') {
+      if (draft.tool === 'rectangle') {
+        const width = Math.abs(draft.current.x - draft.origin.x);
+        const height = Math.abs(draft.current.y - draft.origin.y);
+        if (width <= 0 || height <= 0) return null;
+        return {
+          type: 'rectangle',
+          origin: { x: Math.min(draft.origin.x, draft.current.x), y: Math.min(draft.origin.y, draft.current.y) },
+          width,
+          height,
+          rotation: 0,
+        };
+      }
+      const radius = Math.hypot(draft.current.x - draft.origin.x, draft.current.y - draft.origin.y);
+      if (radius <= 0) return null;
+      return { type: 'circle', center: draft.origin, radius };
+    }
+
+    const points = cursor ? [...draft.points, cursor] : draft.points;
+    if (draft.tool === 'line') {
+      if (points.length < 2) return null;
+      return { type: 'line', from: points[0]!, to: points[1]! };
+    }
+    if (draft.tool === 'polygon') {
+      if (points.length < 3) return null;
+      return { type: 'polygon', vertices: points };
+    }
+    if (points.length < 2) return null;
+    return { type: 'freehand', points, closed: false };
+  }
+
+  $: previewShapeValue = previewShape($drawingDraft, $cursorSurfacePoint);
+  $: previewLabel = previewShapeValue
+    ? computeMeasurementDisplay(previewShapeValue, $activeSurface?.calibration ?? null).primaryLabel
+    : '';
+  $: previewLabelPos = $drawingDraft?.kind === 'drag' ? $drawingDraft.current : $cursorSurfacePoint;
 
   // Chips are a DOM projection of the same Measurement data the canvas draws (21 §6.3 "one
   // source, two projections" — never a second, divergent model). Surface-space == CSS-pixel
@@ -111,11 +202,24 @@
   });
 </script>
 
-<div class="canvas-stage" bind:this={container} data-testid="canvas-stage">
-  <canvas bind:this={canvas} on:click={onClick}></canvas>
+<div class="canvas-stage" class:drawing={$activeTool !== 'select'} bind:this={container} data-testid="canvas-stage">
+  <canvas
+    bind:this={canvas}
+    on:click={onClick}
+    on:mousedown={onMouseDown}
+    on:mousemove={onMouseMove}
+    on:mouseup={onMouseUp}
+    on:dblclick={onDblClick}
+  ></canvas>
   {#each chips as chip (chip.id)}
     <MeasurementChip name={chip.name} primaryLabel={chip.primaryLabel} x={chip.x} y={chip.y} selected={chip.selected} />
   {/each}
+  {#if previewLabel && previewLabelPos}
+    <div class="draft-label" style="left: {previewLabelPos.x}px; top: {previewLabelPos.y}px;" data-testid="draft-label">
+      {previewLabel}
+    </div>
+  {/if}
+  <ToolDock />
 </div>
 
 <style>
@@ -128,7 +232,26 @@
     overflow: hidden;
   }
 
+  .canvas-stage.drawing canvas {
+    cursor: crosshair;
+  }
+
   canvas {
     display: block;
+  }
+
+  .draft-label {
+    position: absolute;
+    transform: translate(12px, -50%);
+    pointer-events: none;
+    background: var(--af-surface-panel);
+    border: 1px dashed var(--af-accent);
+    border-radius: var(--af-radius-sm);
+    padding: 3px 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-accent);
+    white-space: nowrap;
   }
 </style>
