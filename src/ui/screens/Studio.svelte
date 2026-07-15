@@ -1,9 +1,10 @@
 <script lang="ts">
-  // 15_UX_SPECIFICATION.md §6/W1 — Studio. This commit wires the CommandStack session in:
-  // keyboard undo/redo (15 §13: ⌘Z / ⌘⇧Z, plus Ctrl+Y as the Windows redo convention) routed
-  // through the studioSession store. Drawing tools that *produce* commands are the next commit
-  // (Shape rendering) — until then commands enter only programmatically (tests / dev hook).
+  // 15_UX_SPECIFICATION.md §6/W1 — Studio. Keyboard undo/redo (15 §13: ⌘Z / ⌘⇧Z, plus Ctrl+Y as
+  // the Windows redo convention) routed through the studioSession store. MeasurementList (left
+  // panel, 15 §2.2 "ляво=данни") sits beside CanvasStage in the main row — it renders nothing of
+  // its own when there are zero measurements (component-internal empty state, 15 §15).
   import CanvasStage from '../components/CanvasStage.svelte';
+  import MeasurementList from '../components/MeasurementList.svelte';
   import StatusBar from '../components/StatusBar.svelte';
   import TopBar from '../components/TopBar.svelte';
   import { appState, goHome } from '../stores/appState.js';
@@ -31,6 +32,7 @@
 <div class="shell">
   <TopBar projectName={$appState.project?.name ?? null} onBack={goHome} />
   <div class="main">
+    <MeasurementList />
     <CanvasStage />
   </div>
   <StatusBar />

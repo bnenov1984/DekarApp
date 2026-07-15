@@ -9,6 +9,18 @@
   import { onDestroy, onMount } from 'svelte';
   import { activeSurface, selectedMeasurementId, selectMeasurementAt } from '../stores/studioSession.js';
   import { drawSurface } from '../rendering/sceneRenderer.js';
+  import { shapeCentroid } from '../../core/drawing/centroid.js';
+  import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
+  import MeasurementChip from './MeasurementChip.svelte';
+
+  interface ChipData {
+    readonly id: string;
+    readonly name: string;
+    readonly primaryLabel: string;
+    readonly x: number;
+    readonly y: number;
+    readonly selected: boolean;
+  }
 
   let container: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -62,6 +74,24 @@
   $: renderSignal = { surface: $activeSurface, selection: $selectedMeasurementId };
   $: if (ctx && renderSignal) redraw();
 
+  // Chips are a DOM projection of the same Measurement data the canvas draws (21 §6.3 "one
+  // source, two projections" — never a second, divergent model). Surface-space == CSS-pixel
+  // space today, so centroid coordinates are used directly as chip positions.
+  $: chips = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? []).map(
+    (measurement): ChipData => {
+      const { x, y } = shapeCentroid(measurement.shape);
+      const { primaryLabel } = computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration);
+      return {
+        id: measurement.id,
+        name: measurement.identity.name,
+        primaryLabel,
+        x,
+        y,
+        selected: measurement.id === $selectedMeasurementId,
+      };
+    },
+  );
+
   onMount(() => {
     resizeToContainer();
     resizeObserver = new ResizeObserver(() => resizeToContainer());
@@ -83,6 +113,9 @@
 
 <div class="canvas-stage" bind:this={container} data-testid="canvas-stage">
   <canvas bind:this={canvas} on:click={onClick}></canvas>
+  {#each chips as chip (chip.id)}
+    <MeasurementChip name={chip.name} primaryLabel={chip.primaryLabel} x={chip.x} y={chip.y} selected={chip.selected} />
+  {/each}
 </div>
 
 <style>

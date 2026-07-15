@@ -64,6 +64,13 @@ export function selectMeasurementAt(point: Point, tolerance = 4): void {
   selectedMeasurementId.set(null);
 }
 
+/** Direct selection by id — the Measurement List panel's equivalent of clicking a shape on the
+ * canvas (D8, 15 §12: every canvas action has a list counterpart). Both paths converge on the
+ * same store, so canvas and list selection are always in sync by construction. */
+export function selectMeasurement(id: MeasurementId | null): void {
+  selectedMeasurementId.set(id);
+}
+
 /**
  * Commands capture the Surface they were built against (Application layer design: the prior
  * value lives inside the command, 14 §3 / ADR-001). The factory-callback shape here exists so
@@ -108,6 +115,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       canRedo,
       selectedMeasurementId,
       selectMeasurementAt,
+      selectMeasurement,
       get,
     },
   });
