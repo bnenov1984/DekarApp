@@ -1,4 +1,5 @@
 import type { Project, ProjectId } from '../../core/domain/entities.js';
+import type { Unit } from '../../core/domain/types.js';
 
 // docs/21_ARCHITECTURE.md §5.1 / docs/23_API.md §3.1 — a port, not an implementation. No
 // IndexedDB/filesystem/cloud/HTTP/framework type appears anywhere in this file, by construction
@@ -16,6 +17,11 @@ export interface ProjectSummary {
    * projection for the Home "Recent" cards (15 §6 W4: "разпознава се по резултата си"), not a
    * field stored on Project itself. */
   readonly totalArea?: number;
+  /** Found missing during the first real repository implementation (Persistence slice) — a bare
+   * `totalArea` number is ambiguous once Calibration UI exists (a Surface may report px or a
+   * real unit); today's v1 constraint of one Surface per Project keeps this unambiguous to
+   * compute (the summary uses that Surface's own calibration state). */
+  readonly totalAreaUnit?: Unit;
   readonly updatedAt: string;
 }
 

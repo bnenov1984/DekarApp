@@ -3,6 +3,7 @@ import { CommandStack, type Command } from '../../application/commandStack.js';
 import type { Measurement, MeasurementId, Surface } from '../../core/domain/entities.js';
 import { hitTestShape } from '../../core/drawing/hitTest.js';
 import type { Point } from '../../core/domain/types.js';
+import { surfaceRepository, persist } from './persistence.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
 // import; the reverse would fail the ESLint boundaries rule). One CommandStack per Project
@@ -85,20 +86,34 @@ export function executeCommand(buildCommand: (surface: Surface) => Command<Surfa
   const result = stack.execute(buildCommand(surface));
   activeSurface.set(result);
   refreshUndoState();
+  autosave(result);
 }
 
 export function undo(): void {
   if (!stack) return;
   const restored = stack.undo<Surface>();
-  if (restored !== undefined) activeSurface.set(restored);
+  if (restored !== undefined) {
+    activeSurface.set(restored);
+    autosave(restored);
+  }
   refreshUndoState();
 }
 
 export function redo(): void {
   if (!stack) return;
   const result = stack.redo<Surface>();
-  if (result !== undefined) activeSurface.set(result);
+  if (result !== undefined) {
+    activeSurface.set(result);
+    autosave(result);
+  }
   refreshUndoState();
+}
+
+/** PD-012 D6 — "no Save button": every settled mutation (execute/undo/redo) persists
+ * fire-and-forget, never blocking the UI thread. Failures surface non-blockingly via
+ * `persistence.ts`'s `storageErrorMessage`, not a thrown error back into caller code. */
+function autosave(surface: Surface): void {
+  void persist(() => surfaceRepository.save(surface));
 }
 
 // Dev-only debug handle for browser-level verification (preview tooling / future e2e): exposes

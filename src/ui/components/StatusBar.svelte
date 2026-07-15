@@ -5,6 +5,7 @@
   import { snapEnabled, toggleSnap } from '../stores/drawingSession.js';
   import { activeSurface } from '../stores/studioSession.js';
   import { startCalibration, plausibilityWarning } from '../stores/calibrationSession.js';
+  import { storageErrorMessage } from '../stores/persistence.js';
 
   function formatScale(metersPerPixel: number): string {
     const trimmed = metersPerPixel.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -41,6 +42,9 @@
   <button type="button" class="snap-indicator" on:click={toggleSnap} data-testid="snap-indicator">
     ⌗ snap {$snapEnabled ? 'on' : 'off'}
   </button>
+  {#if $storageErrorMessage}
+    <span class="storage-error" data-testid="storage-error">⚠ {$storageErrorMessage}</span>
+  {/if}
 </footer>
 
 <style>
@@ -87,6 +91,12 @@
   }
 
   .scale-chip.warning {
+    color: var(--af-warning);
+  }
+
+  .storage-error {
+    margin-left: auto;
+    font-size: 11.5px;
     color: var(--af-warning);
   }
 </style>

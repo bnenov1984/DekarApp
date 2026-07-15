@@ -1,10 +1,20 @@
 <script lang="ts">
-  // 15_UX_SPECIFICATION.md §6/W4 — Home: three Start affordances. Map and Import need adapters
-  // that don't exist yet (MapProvider, StorageAdapter — ISS-008/P-05 territory) so they're shown
-  // honestly as not-yet-available rather than silently working differently than they claim to.
-  // No Recent projects list yet either — that needs ProjectRepository.list() (23 §3.1), and
-  // there is still no repository implementation, only the port.
-  import { startBlankProject } from '../stores/appState.js';
+  // 15_UX_SPECIFICATION.md §6/W4 — Home: three Start affordances. Map and Import still need
+  // adapters that don't exist yet (MapProvider, file-parsing — P-05 territory), shown honestly as
+  // not-yet-available. Recent (15 W4) is live as of the Persistence slice — real
+  // ProjectRepository.list() cards, "recognized by its result" (preview area, not a thumbnail —
+  // no render-to-static-image pipeline exists, W4's literal preview thumbnails are a later slice).
+  import { onMount } from 'svelte';
+  import { startBlankProject, loadProject, recentProjects, refreshRecentProjects } from '../stores/appState.js';
+  import type { Unit } from '../../core/domain/types.js';
+
+  onMount(refreshRecentProjects);
+
+  function formatArea(area: number, unit: Unit): string {
+    const rounded = Math.round(area);
+    const label = unit === 'px' ? 'px²' : unit === 'm2' ? 'm²' : unit === 'ft2' ? 'ft²' : unit;
+    return `${rounded} ${label}`;
+  }
 </script>
 
 <div class="home">
@@ -32,6 +42,24 @@
       <span class="desc">Coming soon</span>
     </button>
   </div>
+
+  {#if $recentProjects.length > 0}
+    <div class="recent">
+      <p class="recent-header">Recent</p>
+      <div class="recent-cards">
+        {#each $recentProjects as project (project.id)}
+          <button class="recent-card" on:click={() => loadProject(project.id)} data-testid="recent-card">
+            <span class="recent-name">{project.name}</span>
+            <span class="recent-value">
+              {project.totalArea !== undefined && project.totalAreaUnit
+                ? formatArea(project.totalArea, project.totalAreaUnit)
+                : '—'}
+            </span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -113,5 +141,65 @@
   .desc {
     font-size: 12px;
     color: var(--af-ink-secondary);
+  }
+
+  .recent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .recent-header {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--af-ink-tertiary);
+  }
+
+  .recent-cards {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .recent-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 128px;
+    padding: 14px;
+    background: var(--af-surface-panel);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-md);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+  }
+
+  .recent-card:hover {
+    box-shadow: var(--af-shadow-e1);
+  }
+
+  .recent-card:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 2px;
+  }
+
+  .recent-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--af-ink-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .recent-value {
+    font-size: 12px;
+    color: var(--af-ink-secondary);
+    font-variant-numeric: tabular-nums;
   }
 </style>
