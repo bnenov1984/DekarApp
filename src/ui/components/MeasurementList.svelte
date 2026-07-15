@@ -7,10 +7,9 @@
   // 15 §2.2 — "Скрит до първото измерване": this component renders nothing (not even its
   // container) when there are zero measurements — per 15 §15, "най-добрият празен панел е
   // никакъв", the empty state is showing nothing rather than an empty list shell.
-  import { activeSurface, selectedMeasurementId, selectMeasurement } from '../stores/studioSession.js';
-  import { childrenOf } from '../../application/surfaceOps.js';
+  import { activeSurface, selectedMeasurementId, selectMeasurement, reorderMeasurements } from '../stores/studioSession.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
-  import type { Measurement } from '../../core/domain/entities.js';
+  import type { Measurement, MeasurementId } from '../../core/domain/entities.js';
   import type { Unit } from '../../core/domain/types.js';
 
   interface Row {
@@ -42,17 +41,74 @@
     };
   }
 
+  // PO request: this panel is a "Layers" stack (top row = front-most = drawn last by
+  // sceneRenderer.ts) — the opposite of Layer.measurements' raw creation order, which draws
+  // first-added first (bottom). So the row list is built off the RAW array reversed; every
+  // filter/flatMap below preserves relative order, so reversing once at the source is enough to
+  // flip both top-level order and each split group's internal child order consistently.
+  $: orderedMeasurements = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? [])
+    .slice()
+    .reverse();
+
+  function childrenOfOrdered(parentId: string): Measurement[] {
+    return orderedMeasurements.filter((m) => m.parentId === parentId);
+  }
+
   // 15 §5 F7 step 5 — "Parcel ▸ Part 1 / Part 2 / Part 3": every measurement is followed
-  // immediately by its Split children, if any (childrenOf, surfaceOps.ts) — recursive, since a
-  // re-split child (3-part split, PD-009) has its own children in turn.
+  // immediately by its Split children, if any — recursive, since a re-split child (3-part split,
+  // PD-009) has its own children in turn.
   function buildRows(measurement: Measurement, depth: number): Row[] {
-    const children = $activeSurface ? childrenOf($activeSurface, measurement.id) : [];
+    const children = childrenOfOrdered(measurement.id);
     return [toRow(measurement, depth, children.length > 0), ...children.flatMap((c) => buildRows(c, depth + 1))];
   }
 
-  $: rows = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? [])
-    .filter((m) => !m.parentId)
-    .flatMap((parent) => buildRows(parent, 0));
+  $: rows = orderedMeasurements.filter((m) => !m.parentId).flatMap((parent) => buildRows(parent, 0));
+
+  // Drag-to-reorder state (native HTML5 DnD — no library, matches this codebase's no-dependency
+  // discipline). `dragOverId`/`dragOverEdge` drive the drop-position indicator line; the actual
+  // reorder only happens on drop, computed from the *current* `rows` order so it always reflects
+  // whatever's on screen at drop time.
+  let draggedId: MeasurementId | null = null;
+  let dragOverId: MeasurementId | null = null;
+  let dragOverEdge: 'above' | 'below' | null = null;
+
+  function handleDragStart(id: MeasurementId, event: DragEvent): void {
+    draggedId = id;
+    event.dataTransfer?.setData('text/plain', id); // required by Firefox for DnD to activate at all
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(id: MeasurementId, event: DragEvent): void {
+    if (draggedId === null || draggedId === id) return;
+    event.preventDefault(); // required for drop to fire at all
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    dragOverId = id;
+    dragOverEdge = event.clientY - rect.top < rect.height / 2 ? 'above' : 'below';
+  }
+
+  function handleDrop(id: MeasurementId, event: DragEvent): void {
+    event.preventDefault();
+    const sourceId = draggedId;
+    const edge = dragOverEdge;
+    draggedId = null;
+    dragOverId = null;
+    dragOverEdge = null;
+    if (sourceId === null || sourceId === id) return;
+
+    const currentOrder = rows.map((r) => r.id);
+    const withoutSource = currentOrder.filter((rowId) => rowId !== sourceId);
+    const targetIndex = withoutSource.indexOf(id);
+    const insertAt = edge === 'above' ? targetIndex : targetIndex + 1;
+    withoutSource.splice(insertAt, 0, sourceId);
+
+    reorderMeasurements(withoutSource);
+  }
+
+  function handleDragEnd(): void {
+    draggedId = null;
+    dragOverId = null;
+    dragOverEdge = null;
+  }
 
   // Σ Total area excludes Split parents — by construction (INV-4) a parent's area already equals
   // the sum of its children's, so including both would double-count.
@@ -63,19 +119,29 @@
 
 {#if rows.length > 0}
   <div class="panel">
-    <div class="header">Measurements <span class="count">{rows.length}</span></div>
+    <div class="header">Layers <span class="count">{rows.length}</span></div>
     <ul class="list">
       {#each rows as row (row.id)}
-        <li>
+        <li
+          class:drag-over-above={row.id === dragOverId && dragOverEdge === 'above'}
+          class:drag-over-below={row.id === dragOverId && dragOverEdge === 'below'}
+          on:dragover={(e) => handleDragOver(row.id, e)}
+          on:drop={(e) => handleDrop(row.id, e)}
+        >
           <button
             type="button"
             class="row"
             class:selected={row.id === $selectedMeasurementId}
             class:child={row.depth > 0}
+            class:dragging={row.id === draggedId}
             style={row.depth > 0 ? `padding-left: ${9 + row.depth * 22}px` : undefined}
+            draggable="true"
             on:click={() => selectMeasurement(row.id)}
+            on:dragstart={(e) => handleDragStart(row.id, e)}
+            on:dragend={handleDragEnd}
           >
             {#if row.depth > 0}<span class="child-marker" aria-hidden="true">▸</span>{/if}
+            <span class="drag-handle" aria-hidden="true">⠿</span>
             <span class="swatch" style="background: {row.color}"></span>
             <span class="name">{row.name}</span>
             <span class="value">{row.primaryLabel}</span>
@@ -149,10 +215,32 @@
     outline-offset: -2px;
   }
 
+  .row.dragging {
+    opacity: 0.4;
+  }
+
   .child-marker {
     color: var(--af-ink-tertiary);
     font-size: 11px;
     margin-right: -3px;
+  }
+
+  .drag-handle {
+    color: var(--af-ink-tertiary);
+    font-size: 13px;
+    line-height: 1;
+    cursor: grab;
+    flex: 0 0 auto;
+  }
+
+  /* Drop-position indicator — a thin line at the top/bottom edge of the row currently being
+     dragged over, matching the panel's accent color used elsewhere for "current focus". */
+  li.drag-over-above .row {
+    box-shadow: inset 0 2px 0 var(--af-accent);
+  }
+
+  li.drag-over-below .row {
+    box-shadow: inset 0 -2px 0 var(--af-accent);
   }
 
   .swatch {

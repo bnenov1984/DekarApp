@@ -28,7 +28,8 @@ export type DomainEvent =
       readonly parentId: MeasurementId;
       readonly childIds: readonly [MeasurementId, MeasurementId];
     }
-  | { readonly type: 'MeasurementDeleted'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId };
+  | { readonly type: 'MeasurementDeleted'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
+  | { readonly type: 'MeasurementsReordered'; readonly surfaceId: SurfaceId };
 
 export type DomainEventListener = (event: DomainEvent) => void;
 

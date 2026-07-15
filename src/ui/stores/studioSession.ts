@@ -5,6 +5,7 @@ import { hitTestShape } from '../../core/drawing/hitTest.js';
 import type { Point } from '../../core/domain/types.js';
 import { surfaceRepository, persist } from './persistence.js';
 import { deleteMeasurementCommand } from '../../application/commands/deleteMeasurement.js';
+import { reorderMeasurementsCommand } from '../../application/commands/reorderMeasurements.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
 // import; the reverse would fail the ESLint boundaries rule). One CommandStack per Project
@@ -122,6 +123,13 @@ export function deleteSelectedMeasurement(): void {
   selectedMeasurementId.set(null);
 }
 
+/** Layers panel drag-to-reorder (PO request): `orderedIdsFrontToBack` is the panel's complete
+ * row order after a drop, topmost row first. Selection is left untouched — reordering doesn't
+ * change what's selected, only its stacking position. */
+export function reorderMeasurements(orderedIdsFrontToBack: MeasurementId[]): void {
+  executeCommand((surface) => reorderMeasurementsCommand({ surface, orderedIdsFrontToBack }));
+}
+
 /** PD-012 D6 — "no Save button": every settled mutation (execute/undo/redo) persists
  * fire-and-forget, never blocking the UI thread. Failures surface non-blockingly via
  * `persistence.ts`'s `storageErrorMessage`, not a thrown error back into caller code. */
@@ -145,6 +153,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       selectMeasurementAt,
       selectMeasurement,
       deleteSelectedMeasurement,
+      reorderMeasurements,
       get,
     },
   });
