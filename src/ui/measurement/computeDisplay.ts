@@ -4,10 +4,9 @@ import type { Calibration, MeasurementValues, Shape, Unit } from '../../core/dom
 
 // UI-layer formatting on top of the two pure Core modules (17 §2 compute, §5 precision) — this
 // file contains no geometry/measurement math of its own, only display concerns (label text,
-// unit suffixes). No Surface created in the app yet carries a non-null Calibration (the
-// calibration UI/CalibrationService integration doesn't exist yet — ISS-adjacent, disclosed):
-// every measurement today computes in px mode. The geo/linear branches below are written for
-// forward-compatibility with Core's actual contract, not exercised by any UI flow yet.
+// unit suffixes). Linear (Image/PDF) calibration is wired since the Calibration UI slice
+// (`calibrationSession.ts`); the geo branch is still written for forward-compatibility with
+// Core's actual contract, not exercised by any UI flow yet (no Map surfaces).
 
 export interface MeasurementDisplay {
   readonly values: MeasurementValues;
@@ -56,4 +55,14 @@ export function computeMeasurementDisplay(shape: Shape, calibration: Calibration
     return { values, primaryLabel: `${rounded} ${lengthUnitLabel(values.unit)}` };
   }
   return { values, primaryLabel: '' };
+}
+
+/** PropertyPanel's Values section (16 §3.2) needs perimeter formatted *alongside* an area
+ * primaryLabel — `computeMeasurementDisplay` only ever surfaces one of area/length as the
+ * primary label, so this reuses the same precision/unit-label rules for the secondary field
+ * instead of duplicating them. */
+export function formatLengthValue(length: number, unit: Unit): string {
+  const ctx = precisionContextFor(unit);
+  const rounded = roundForDisplay(length, ctx);
+  return `${rounded} ${lengthUnitLabel(unit)}`;
 }

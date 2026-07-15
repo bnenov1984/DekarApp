@@ -195,6 +195,57 @@ export function drawInProgress(
 /** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
  * visual language as `drawInProgress` (dashed, accent-colored) but never a Measurement preview —
  * this line never reaches `computeMeasurementDisplay`, only `CalibrationService`. */
+// docs/18_DRAWING_ENGINE.md §6 — vertex editing handles. Same shape-type restriction as
+// hitTest.ts's `findVertexAt`/`findEdgeAt` (Polygon/Curve/Freehand only); a local switch rather
+// than importing hitTest.ts's private helper, matching this file's existing `pathForShape` style.
+function editablePointsForHandles(shape: Shape): readonly Point[] | null {
+  switch (shape.type) {
+    case 'polygon':
+      return shape.vertices;
+    case 'curve':
+      return shape.controlPoints;
+    case 'freehand':
+      return shape.points;
+    default:
+      return null;
+  }
+}
+
+const VERTEX_HANDLE_SIZE = 4;
+
+/** Small filled squares (white-ringed for contrast over any fill color) at every editable
+ * vertex — the "vertex-editing: върхове като дръжки" state from 16 §3.1 MeasurementShape. */
+export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, accentColor: string): void {
+  const points = editablePointsForHandles(shape);
+  if (!points) return;
+  ctx.save();
+  ctx.fillStyle = accentColor;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.5;
+  for (const p of points) {
+    ctx.beginPath();
+    ctx.rect(p.x - VERTEX_HANDLE_SIZE, p.y - VERTEX_HANDLE_SIZE, VERTEX_HANDLE_SIZE * 2, VERTEX_HANDLE_SIZE * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Live vertex-move/edge-insert drag preview — same dashed-ghost language as `drawInProgress`/
+ * `drawCalibrationLine` (18 §6 / 15 W5 "one mental model for everything unconfirmed"), outline
+ * only so the real (still-current) Measurement fill stays visible underneath while dragging. */
+export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string): void {
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = accentColor;
+  ctx.beginPath();
+  pathForShape(ctx, previewShape);
+  ctx.stroke();
+  ctx.restore();
+  drawVertexHandles(ctx, previewShape, accentColor);
+}
+
 export function drawCalibrationLine(
   ctx: CanvasRenderingContext2D,
   from: Point,

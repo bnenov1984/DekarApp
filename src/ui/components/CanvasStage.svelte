@@ -7,6 +7,7 @@
   // yet — that's a disclosed, later concern; nothing in 21 §6 requires it to exist before shapes
   // can render and be selected).
   import { onDestroy, onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import { activeSurface, selectedMeasurementId, selectMeasurementAt } from '../stores/studioSession.js';
   import {
     activeTool,
@@ -29,7 +30,16 @@
     cancelCalibration,
     type CalibrationUnit,
   } from '../stores/calibrationSession.js';
-  import { drawSurface, drawInProgress, drawCalibrationLine } from '../rendering/sceneRenderer.js';
+  import {
+    vertexEditingId,
+    vertexDrag,
+    enterVertexEditing,
+    exitVertexEditing,
+    pointerDown as vertexPointerDown,
+    pointerMove as vertexPointerMove,
+    pointerUp as vertexPointerUp,
+  } from '../stores/vertexEditSession.js';
+  import { drawSurface, drawInProgress, drawCalibrationLine, drawVertexHandles, drawVertexEditPreview } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
   import type { Point, Shape } from '../../core/domain/types.js';
@@ -73,6 +83,14 @@
     if ($calibrationDraft) {
       drawCalibrationLine(ctx, $calibrationDraft.from, $calibrationDraft.to ?? $calibrationCursor, readAccentColor());
     }
+    if ($vertexEditingId) {
+      if ($vertexDrag) {
+        drawVertexEditPreview(ctx, $vertexDrag.previewShape, readAccentColor());
+      } else {
+        const editing = surface.layers.flatMap((l) => l.measurements).find((m) => m.id === $vertexEditingId);
+        if (editing) drawVertexHandles(ctx, editing.shape, readAccentColor());
+      }
+    }
   }
 
   function resizeToContainer(): void {
@@ -97,10 +115,12 @@
   }
 
   // Click-to-select (21 §6.3) only applies to the Select tool, and never while calibrating (Tool
-  // Dock is disabled then too, ToolDock.svelte) — with a drawing tool armed, mousedown/mousemove/
-  // mouseup below own the interaction (docs/18_DRAWING_ENGINE.md).
+  // Dock is disabled then too, ToolDock.svelte) or vertex-editing (mousedown below already
+  // decided whether the click hit a vertex/edge or exited vertex-edit mode, 15 §14.4) — with a
+  // drawing tool armed, mousedown/mousemove/mouseup below own the interaction instead
+  // (docs/18_DRAWING_ENGINE.md).
   function onClick(event: MouseEvent): void {
-    if ($calibrating || $activeTool !== 'select') return;
+    if ($calibrating || $vertexEditingId || $activeTool !== 'select') return;
     selectMeasurementAt(toSurfacePoint(event));
   }
 
@@ -108,6 +128,10 @@
     const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey };
     if ($calibrating) {
       calibrationPointerDown(toSurfacePoint(event), modifiers);
+      return;
+    }
+    if ($vertexEditingId && $activeTool === 'select') {
+      vertexPointerDown(toSurfacePoint(event), modifiers);
       return;
     }
     if ($activeTool === 'select') return;
@@ -120,20 +144,37 @@
       calibrationPointerMove(toSurfacePoint(event), modifiers);
       return;
     }
+    if ($vertexEditingId && $activeTool === 'select') {
+      vertexPointerMove(toSurfacePoint(event), modifiers);
+      return;
+    }
     if ($activeTool === 'select') return;
     pointerMove(toSurfacePoint(event), modifiers);
   }
 
   function onMouseUp(event: MouseEvent): void {
     if ($calibrating) return; // calibration is click-click (pointerDown only), no drag semantics
+    if ($vertexEditingId && $activeTool === 'select') {
+      vertexPointerUp();
+      return;
+    }
     if ($activeTool === 'select') return;
     pointerUp(toSurfacePoint(event), { shiftKey: event.shiftKey, altKey: event.altKey });
   }
 
-  // 15 §14.4 "Двоен клик" / §5 F1 step 6 — double-click closes a Polygon regardless of self-snap
-  // proximity to the first vertex.
-  function onDblClick(): void {
-    if ($activeTool === 'polygon') handleEnter();
+  // 15 §14.4 "Двоен клик" — over a shape enters vertex editing (Polygon/Curve/Freehand only,
+  // enterVertexEditing itself no-ops for Rectangle/Circle/Line); over a Polygon being drawn,
+  // closes it regardless of self-snap proximity (§5 F1 step 6) instead.
+  function onDblClick(event: MouseEvent): void {
+    if ($calibrating) return;
+    if ($activeTool === 'polygon') {
+      handleEnter();
+      return;
+    }
+    if ($activeTool !== 'select') return;
+    selectMeasurementAt(toSurfacePoint(event));
+    const id = get(selectedMeasurementId);
+    if (id) enterVertexEditing(id);
   }
 
   // Svelte 4 reactive statement: renderSignal's assignment is what declares $activeSurface/
@@ -148,8 +189,15 @@
     calibrationDraft: $calibrationDraft,
     calibrationCursor: $calibrationCursor,
     calibrationSnap: $calibrationSnapTarget,
+    vertexEditingId: $vertexEditingId,
+    vertexDrag: $vertexDrag,
   };
   $: if (ctx && renderSignal) redraw();
+
+  // Switching away from Select (Tool Dock click or keyboard shortcut, both funnel through
+  // drawingSession.setTool) implicitly exits vertex-edit mode — avoids a stale `vertexEditingId`
+  // silently resuming if the user later switches back to Select without an explicit Esc.
+  $: if ($activeTool !== 'select' && $vertexEditingId) exitVertexEditing();
 
   // Live numeric feedback while drawing (15 §5 F1 step 5/§14.2) — built from a synthetic Shape
   // that never goes through drawingEngine.create() (only commit does, drawingSession.ts); this is

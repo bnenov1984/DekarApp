@@ -21,6 +21,7 @@ export type DomainEvent =
       readonly provenance: Provenance;
     }
   | { readonly type: 'MeasurementShapeEdited'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
+  | { readonly type: 'MeasurementIdentityUpdated'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
   | {
       readonly type: 'MeasurementSplit';
       readonly surfaceId: SurfaceId;

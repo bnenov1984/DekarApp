@@ -71,3 +71,54 @@ export function hitTestShape(point: Point, shape: Shape, tolerance: number): boo
 function nearestPointToLine(point: Point, from: Point, to: Point): number {
   return distance(point, nearestPointOnSegment(point, from, to));
 }
+
+// docs/18_DRAWING_ENGINE.md §6 — vertex editing applies only to Polygon/Curve/Freehand (the
+// shapes with an editable point list), the exact same restriction drawingEngine.ts's private
+// `getPoints` enforces. A narrower, purpose-built helper rather than reuse of snap.ts's broader
+// `shapePoints` (which also includes Rectangle corners/Circle center — snap *targets*, not
+// vertex-*edit* candidates; Rectangle/Circle have no addVertex/editVertex support at all).
+
+function editablePoints(shape: Shape): readonly Point[] | null {
+  switch (shape.type) {
+    case 'polygon':
+      return shape.vertices;
+    case 'curve':
+      return shape.controlPoints;
+    case 'freehand':
+      return shape.points;
+    default:
+      return null;
+  }
+}
+
+function isClosedEditable(shape: Shape): boolean {
+  return shape.type === 'polygon' || ((shape.type === 'curve' || shape.type === 'freehand') && shape.closed);
+}
+
+/** Returns the index of the vertex within `tolerance` of `point`, or `null` — used to decide
+ * whether a mousedown starts a vertex-move drag (18 §6) vs. an edge-insert drag (below) vs.
+ * nothing. `null` for shape types with no editable point list (Rectangle/Circle/Line). */
+export function findVertexAt(point: Point, shape: Shape, tolerance: number): number | null {
+  const points = editablePoints(shape);
+  if (!points) return null;
+  for (let i = 0; i < points.length; i++) {
+    if (distance(point, points[i]!) <= tolerance) return i;
+  }
+  return null;
+}
+
+/** Returns the index of the edge (its *start* vertex index — matches `addVertex`'s `edgeIndex`
+ * contract, drawingEngine.ts) within `tolerance` of `point`, or `null`. Callers check
+ * `findVertexAt` first (18 §4 snap priority: vertex before edge) — this only needs to consider
+ * points not already claimed as a vertex hit. */
+export function findEdgeAt(point: Point, shape: Shape, tolerance: number): number | null {
+  const points = editablePoints(shape);
+  if (!points) return null;
+  const closed = isClosedEditable(shape);
+  const edgeCount = closed ? points.length : points.length - 1;
+  for (let i = 0; i < edgeCount; i++) {
+    const nearest = nearestPointOnSegment(point, points[i]!, points[(i + 1) % points.length]!);
+    if (distance(point, nearest) <= tolerance) return i;
+  }
+  return null;
+}
