@@ -59,7 +59,7 @@ function resolveSnap(cursor: Point, modifiers: PointerModifiers, lastSegmentStar
 /** ScaleChip click — discards any in-progress drawing draft (calibration and drawing never
  * interleave; Tool Dock is disabled for the same reason, ToolDock.svelte) and arms line capture. */
 export function startCalibration(): void {
-  setTool('select');
+  setTool(null); // back to the neutral interaction state — discards any active drawing tool
   calibrationDraft.set(null);
   calibrationCursor.set(null);
   calibrationSnapTarget.set(undefined);

@@ -35,7 +35,7 @@ function allMeasurements() {
 
 beforeEach(() => {
   initStudioSession(blankSurface());
-  setTool('select'); // clears any leftover draft and resets serial-arm from a prior test
+  setTool(null); // back to the neutral interaction state — clears any leftover draft/serial-arm
   snapEnabled.set(true);
 });
 
@@ -54,6 +54,27 @@ describe('tool switching', () => {
     setTool('rectangle');
     expect(get(drawingDraft)).toBeNull();
     expect(get(activeTool)).toBe('rectangle');
+  });
+
+  // PO follow-up ("replace Select tool with Pan" / "neutral interaction state") — neither the
+  // neutral state (`null`, direct selection/drag-to-edit lives in studioSession.ts/CanvasStage.svelte,
+  // not here) nor the explicit Pan tool ever populates `drawingDraft` — same role 'select' used to
+  // play in this file before both existed.
+  it('pointerDown/pointerMove are no-ops in the neutral interaction state', () => {
+    pointerDown({ x: 0, y: 0 });
+    expect(get(drawingDraft)).toBeNull();
+    pointerMove({ x: 10, y: 10 });
+    expect(get(drawingDraft)).toBeNull();
+    expect(get(cursorSurfacePoint)).toBeNull();
+  });
+
+  it('pointerDown/pointerMove are no-ops while the explicit Pan tool is active', () => {
+    setTool('pan');
+    pointerDown({ x: 0, y: 0 });
+    expect(get(drawingDraft)).toBeNull();
+    pointerMove({ x: 10, y: 10 });
+    expect(get(drawingDraft)).toBeNull();
+    expect(get(cursorSurfacePoint)).toBeNull();
   });
 });
 
@@ -127,12 +148,12 @@ describe('polygon — point accumulation and closing', () => {
     expect(allMeasurements()).toHaveLength(0);
   });
 
-  it('auto-selects Select after a non-serial commit', () => {
+  it('reverts to the neutral interaction state after a non-serial commit', () => {
     pointerDown({ x: 0, y: 0 });
     pointerDown({ x: 100, y: 0 });
     pointerDown({ x: 100, y: 100 });
     handleEnter();
-    expect(get(activeTool)).toBe('select');
+    expect(get(activeTool)).toBeNull();
   });
 
   it('stays armed on the tool when activated with Shift (serial drawing)', () => {

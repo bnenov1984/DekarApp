@@ -38,7 +38,7 @@ describe('starting and cancelling', () => {
     setTool('polygon');
     startCalibration();
     expect(get(calibrating)).toBe(true);
-    expect(get(activeTool)).toBe('select');
+    expect(get(activeTool)).toBeNull();
   });
 
   it('cancelCalibration clears the draft with no trace', () => {

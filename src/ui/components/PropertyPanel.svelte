@@ -6,10 +6,33 @@
   //
   // Renders nothing when there's no selection (same "component-internal empty state" pattern as
   // MeasurementList.svelte, 15 §15).
-  import { activeSurface, selectedMeasurementId, executeCommand, deleteSelectedMeasurement } from '../stores/studioSession.js';
+  import {
+    activeSurface,
+    selectedMeasurementId,
+    selectedMeasurementIds,
+    backgroundSelected,
+    setImageLocked,
+    setMeasurementLocked,
+    executeCommand,
+    deleteSelectedMeasurement,
+    setVertexLabel,
+  } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
-  import { exitVertexEditing } from '../stores/vertexEditSession.js';
-  import { computeMeasurementDisplay, formatLengthValue } from '../measurement/computeDisplay.js';
+  import { resizeRectangleDimensionsCommand } from '../../application/commands/resizeRectangleDimensions.js';
+  import { resizeCircleToRadiusCommand } from '../../application/commands/resizeCircleToRadius.js';
+  import { cancelDrag } from '../stores/vertexEditSession.js';
+  import { splittingId, startSplit } from '../stores/splitSession.js';
+  import { activeVertexLabel, clearActiveVertexLabel } from '../stores/vertexLabelSession.js';
+  import Icon from './Icon.svelte';
+  import {
+    computeMeasurementDisplay,
+    dimensionUnitFor,
+    formatAreaValue,
+    formatDimensionDraft,
+    formatLengthValue,
+    parseDimensionToPx,
+  } from '../measurement/computeDisplay.js';
+  import { displayUnit } from '../stores/unitPreferenceSession.js';
   import type { MeasurementIdentity } from '../../core/domain/entities.js';
 
   const MEASUREMENT_COLORS = [
@@ -27,17 +50,58 @@
     (m) => m.id === $selectedMeasurementId,
   );
 
-  $: display = measurement ? computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration) : null;
+  // PO follow-up (background layer selectability) — minimal Properties section for the Background
+  // "layer" (not a Measurement, so none of the Identity/Values/Notes machinery above applies):
+  // just the same lock toggle the Layers panel has, plus its current on-canvas size once the user
+  // has resized it (still the "contain"-fit default before that, so nothing to show).
+  $: imageLocked = $activeSurface?.imageLocked ?? true;
+
+  $: display = measurement ? computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, $displayUnit) : null;
 
   // Local edit drafts, reset only when the *selected measurement* changes (not on every store
   // tick) — otherwise a keystroke would be clobbered by the reactive re-derivation above.
   let draftForId: string | null = null;
   let nameDraft = '';
   let noteDraft = '';
+  let lastSyncedName = '';
   $: if (measurement && measurement.id !== draftForId) {
     draftForId = measurement.id;
     nameDraft = measurement.identity.name;
     noteDraft = measurement.identity.note ?? '';
+    lastSyncedName = measurement.identity.name;
+  }
+  // The name can now also change from OUTSIDE this panel while the same measurement stays
+  // selected (chip inline rename, MeasurementChip.svelte) — without this sync the panel's field
+  // would keep showing the stale pre-rename name, and blurring it would silently revert the
+  // rename. Name only (identity.name changes exclusively via committed commands, so this can't
+  // clobber mid-typing); noteDraft deliberately keeps the id-change-only reset above.
+  $: if (measurement && measurement.identity.name !== lastSyncedName) {
+    lastSyncedName = measurement.identity.name;
+    nameDraft = lastSyncedName;
+  }
+
+  // PO request (per-vertex annotation) — while a vertex is "active" (double-clicked, one of its
+  // handle dots, CanvasStage.svelte, only reachable in vertex-edit mode), the Notes section below
+  // repurposes itself for that vertex's label instead of the Measurement's own note. `null`
+  // whenever the active vertex belongs to a *different* Measurement than the current selection
+  // (stale/irrelevant — reverts to the ordinary Notes view without needing its own store write).
+  $: activeLabel = $activeVertexLabel && measurement && $activeVertexLabel.measurementId === measurement.id ? $activeVertexLabel : null;
+  $: currentVertexLabel = activeLabel ? (measurement!.vertexLabels?.[activeLabel.vertexIndex] ?? null) : null;
+
+  const DEFAULT_LABEL_COLOR = MEASUREMENT_COLORS[0]!;
+
+  let labelDraftKey: string | null = null;
+  let labelTextDraft = '';
+  let labelColorDraft: string = DEFAULT_LABEL_COLOR;
+  $: if (activeLabel) {
+    const key = `${activeLabel.measurementId}:${activeLabel.vertexIndex}`;
+    if (key !== labelDraftKey) {
+      labelDraftKey = key;
+      labelTextDraft = currentVertexLabel?.text ?? '';
+      labelColorDraft = currentVertexLabel?.color ?? DEFAULT_LABEL_COLOR;
+    }
+  } else {
+    labelDraftKey = null;
   }
 
   function commitIdentity(patch: Partial<MeasurementIdentity>): void {
@@ -63,6 +127,74 @@
     }
   }
 
+  // PO follow-up ("numeric input fields for dimensions") — Rectangle width/height and Circle
+  // radius, typed directly rather than only drag-resized. `dimUnit` is the unit these fields
+  // display in (px uncalibrated, else the length unit paired with $displayUnit); `canEditDimensions`
+  // excludes Geo calibration (no Surface-space px to convert a typed value into — computeDisplay.js's
+  // parseDimensionToPx header). Same draft-resync convention as nameDraft above: only overwritten
+  // when the shape's actual value changes (drag-resize elsewhere, undo/redo), never on every store
+  // tick, so an in-progress keystroke can't be clobbered.
+  $: canEditDimensions = $activeSurface ? $activeSurface.calibration === null || $activeSurface.calibration.kind === 'linear' : false;
+  $: dimUnit = $activeSurface ? dimensionUnitFor($activeSurface.calibration, $displayUnit) : 'px';
+
+  let widthDraft = '';
+  let heightDraft = '';
+  let radiusDraft = '';
+  let lastSyncedWidth: number | null = null;
+  let lastSyncedHeight: number | null = null;
+  let lastSyncedRadius: number | null = null;
+  $: if (measurement?.shape.type === 'rectangle' && display) {
+    const { width, height } = display.values;
+    if (width !== undefined && width !== lastSyncedWidth) {
+      lastSyncedWidth = width;
+      widthDraft = formatDimensionDraft(width, dimUnit);
+    }
+    if (height !== undefined && height !== lastSyncedHeight) {
+      lastSyncedHeight = height;
+      heightDraft = formatDimensionDraft(height, dimUnit);
+    }
+  }
+  $: if (measurement?.shape.type === 'circle' && display) {
+    const { radius } = display.values;
+    if (radius !== undefined && radius !== lastSyncedRadius) {
+      lastSyncedRadius = radius;
+      radiusDraft = formatDimensionDraft(radius, dimUnit);
+    }
+  }
+
+  // Both fields commit together (resizeRectangleDimensionsCommand needs width+height at once, same
+  // as dragging a corner) — blurring either one re-reads whatever's currently in both drafts.
+  // Skipped entirely (no command, no undo step) when the parsed drafts round-trip back to the same
+  // displayed value, so tabbing through an unedited field doesn't push a no-op onto the undo stack.
+  function commitDimensions(): void {
+    if (!measurement || measurement.shape.type !== 'rectangle' || !$activeSurface || !display) return;
+    const currentWidth = display.values.width!;
+    const currentHeight = display.values.height!;
+    const widthPx = parseDimensionToPx(widthDraft, $activeSurface.calibration, $displayUnit);
+    const heightPx = parseDimensionToPx(heightDraft, $activeSurface.calibration, $displayUnit);
+    if (widthPx === null || heightPx === null) {
+      widthDraft = formatDimensionDraft(currentWidth, dimUnit);
+      heightDraft = formatDimensionDraft(currentHeight, dimUnit);
+      return;
+    }
+    if (widthDraft === formatDimensionDraft(currentWidth, dimUnit) && heightDraft === formatDimensionDraft(currentHeight, dimUnit)) return;
+    executeCommand((surface) =>
+      resizeRectangleDimensionsCommand({ surface, measurementId: measurement!.id, width: widthPx, height: heightPx }),
+    );
+  }
+
+  function commitRadius(): void {
+    if (!measurement || measurement.shape.type !== 'circle' || !$activeSurface || !display) return;
+    const currentRadius = display.values.radius!;
+    const radiusPx = parseDimensionToPx(radiusDraft, $activeSurface.calibration, $displayUnit);
+    if (radiusPx === null) {
+      radiusDraft = formatDimensionDraft(currentRadius, dimUnit);
+      return;
+    }
+    if (radiusDraft === formatDimensionDraft(currentRadius, dimUnit)) return;
+    executeCommand((surface) => resizeCircleToRadiusCommand({ surface, measurementId: measurement!.id, radius: radiusPx }));
+  }
+
   function onColorPick(color: string): void {
     commitIdentity({ color });
   }
@@ -72,13 +204,80 @@
     if (noteDraft !== (measurement.identity.note ?? '')) commitIdentity({ note: noteDraft });
   }
 
+  // Empty text clears the label entirely (null) rather than leaving a dangling empty-text-plus-
+  // color entry — matches vertexLabels.ts's own "no text = no label" normalization.
+  function onVertexLabelTextBlur(): void {
+    if (!activeLabel) return;
+    const trimmed = labelTextDraft.trim();
+    setVertexLabel(activeLabel.measurementId, activeLabel.vertexIndex, trimmed ? { text: trimmed, color: labelColorDraft } : null);
+  }
+
+  // Color applies immediately (like the Measurement's own onColorPick) but only actually commits
+  // a label if there's already text — picking a color before typing anything would otherwise
+  // create/keep an empty-text label, which vertexLabels.ts treats as "no label" anyway.
+  function onVertexLabelColorPick(color: string): void {
+    labelColorDraft = color;
+    const trimmed = labelTextDraft.trim();
+    if (activeLabel && trimmed) setVertexLabel(activeLabel.measurementId, activeLabel.vertexIndex, { text: trimmed, color });
+  }
+
   // 11 §4 — deleteMeasurementCommand already owns the split-parent/split-child/plain lifecycle
   // rules; this button (and the Delete/Backspace shortcut, Studio.svelte) just triggers it for
   // the current selection. No confirmation dialog (15 §16: "изтриване без потвърждаващ диалог —
   // Undo покрива грешките"), matching every other deletion in this product (vertex delete, etc).
   function onDeleteClick(): void {
+    clearActiveVertexLabel();
     deleteSelectedMeasurement();
-    exitVertexEditing();
+    cancelDrag();
+  }
+
+  // PO follow-up (UX review, item B5 "Split button") — Split (11 §4/18 §5, a genuinely
+  // differentiated feature: live dual-area preview) previously had exactly one entry point, the
+  // `X` shortcut (Studio.svelte) — approximately undiscoverable. Same guard Studio.svelte's
+  // shortcut already applies (not already splitting something else); only shown at all for
+  // Polygon (`startSplit`/`splitCommand` only support Polygon, 18 §5).
+  $: canSplitSelected = measurement?.shape.type === 'polygon' && !measurement.locked && !$splittingId;
+
+  function onSplitClick(): void {
+    if (!measurement) return;
+    startSplit(measurement.id);
+  }
+
+  // PO follow-up ("per-measurement lock") — same setMeasurementLocked action the Layers panel's
+  // own per-row lock toggle and the context menu's Lock/Unlock item use.
+  function onToggleLocked(): void {
+    if (!measurement) return;
+    setMeasurementLocked(measurement.id, !measurement.locked);
+  }
+
+  // PO follow-up (UX review, item A13 "multi-select bulk operations") — a minimal bulk summary
+  // for >1 selected: Delete (already bulk-aware, studioSession.ts), a "set color for all" swatch
+  // row (reuses the same MEASUREMENT_COLORS/swatch UI as the single-measurement view above), and
+  // the combined area. Split parents are excluded from the total the same way MeasurementList's
+  // own footer excludes them (INV-4: a parent's area already equals its children's combined) —
+  // only relevant if the user happened to multi-select both a parent and its own child.
+  $: selectedMeasurementsList = ($activeSurface?.layers.flatMap((l) => l.measurements) ?? []).filter((m) =>
+    $selectedMeasurementIds.has(m.id),
+  );
+  $: selectedSplitParentIds = new Set(
+    selectedMeasurementsList.filter((m) => selectedMeasurementsList.some((other) => other.parentId === m.id)).map((m) => m.id),
+  );
+  $: multiValues = selectedMeasurementsList
+    .filter((m) => !selectedSplitParentIds.has(m.id))
+    .map((m) => computeMeasurementDisplay(m.shape, $activeSurface!.calibration, $displayUnit).values);
+  $: multiTotalArea = multiValues.reduce((sum, v) => sum + (v.area ?? 0), 0);
+  $: multiTotalUnit = multiValues.find((v) => v.area !== undefined)?.unit;
+  $: multiTotalAreaLabel = multiTotalUnit ? formatAreaValue(multiTotalArea, multiTotalUnit) : null;
+
+  // Rides the same per-measurement updateIdentityCommand as the single-selection color swatch —
+  // one undo step per measurement recolored (N selected = N undo steps to fully undo), a
+  // deliberate simplification over one atomic batch command; Delete/Duplicate's atomic-batch
+  // guarantee matters far more for a destructive/generative action than it does for a cosmetic
+  // recolor.
+  function onBulkColorPick(color: string): void {
+    for (const m of selectedMeasurementsList) {
+      executeCommand((s) => updateIdentityCommand({ surface: s, measurementId: m.id, identity: { ...m.identity, color } }));
+    }
   }
 </script>
 
@@ -86,15 +285,39 @@
   <div class="panel" data-testid="property-panel">
     <div class="header-row">
       <span class="header">Properties</span>
-      <button
-        type="button"
-        class="delete-button"
-        title="Delete (Backspace)"
-        on:click={onDeleteClick}
-        data-testid="delete-measurement"
-      >
-        Delete
-      </button>
+      <div class="header-actions">
+        {#if measurement.shape.type === 'polygon'}
+          <button
+            type="button"
+            class="split-button"
+            title="Split (X)"
+            disabled={!canSplitSelected}
+            on:click={onSplitClick}
+            data-testid="split-measurement"
+          >
+            Split
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="lock-button"
+          title={measurement.locked ? 'Unlock to move, resize, or delete' : 'Lock to prevent moving, resizing, or deleting'}
+          on:click={onToggleLocked}
+          data-testid="lock-measurement"
+        >
+          <Icon name={measurement.locked ? 'lock' : 'unlock'} size={14} />
+        </button>
+        <button
+          type="button"
+          class="delete-button"
+          title="Delete (Backspace)"
+          disabled={measurement.locked}
+          on:click={onDeleteClick}
+          data-testid="delete-measurement"
+        >
+          Delete
+        </button>
+      </div>
     </div>
 
     <section class="section">
@@ -139,19 +362,171 @@
         {#if display.values.vertexCount !== undefined}
           <div class="value-row"><span>Vertices</span><strong>{display.values.vertexCount}</strong></div>
         {/if}
+        {#if measurement.shape.type === 'rectangle' && canEditDimensions}
+          <div class="value-row dimension-row">
+            <span>Width</span>
+            <span class="dimension-input-group">
+              <input
+                type="text"
+                inputmode="decimal"
+                class="dimension-input"
+                bind:value={widthDraft}
+                on:blur={commitDimensions}
+                on:keydown={onNameKeydown}
+                disabled={measurement.locked}
+                aria-label="Width"
+                data-testid="dimension-width"
+              />
+              <span class="dimension-unit">{dimUnit}</span>
+            </span>
+          </div>
+          <div class="value-row dimension-row">
+            <span>Height</span>
+            <span class="dimension-input-group">
+              <input
+                type="text"
+                inputmode="decimal"
+                class="dimension-input"
+                bind:value={heightDraft}
+                on:blur={commitDimensions}
+                on:keydown={onNameKeydown}
+                disabled={measurement.locked}
+                aria-label="Height"
+                data-testid="dimension-height"
+              />
+              <span class="dimension-unit">{dimUnit}</span>
+            </span>
+          </div>
+        {/if}
+        {#if measurement.shape.type === 'circle' && canEditDimensions}
+          <div class="value-row dimension-row">
+            <span>Radius</span>
+            <span class="dimension-input-group">
+              <input
+                type="text"
+                inputmode="decimal"
+                class="dimension-input"
+                bind:value={radiusDraft}
+                on:blur={commitRadius}
+                on:keydown={onNameKeydown}
+                disabled={measurement.locked}
+                aria-label="Radius"
+                data-testid="dimension-radius"
+              />
+              <span class="dimension-unit">{dimUnit}</span>
+            </span>
+          </div>
+        {/if}
       </section>
     {/if}
 
     <section class="section">
-      <label class="notes-label" for="property-notes">Notes</label>
-      <textarea
-        id="property-notes"
-        bind:value={noteDraft}
-        on:blur={onNoteBlur}
-        rows="3"
-        data-testid="identity-notes"
-      ></textarea>
+      {#if activeLabel}
+        <div class="notes-header-row">
+          <label class="notes-label" for="property-notes">Vertex label</label>
+          <button type="button" class="done-button" on:click={clearActiveVertexLabel} data-testid="vertex-label-done">
+            Done
+          </button>
+        </div>
+        <textarea
+          id="property-notes"
+          bind:value={labelTextDraft}
+          on:blur={onVertexLabelTextBlur}
+          rows="2"
+          placeholder="Label this point…"
+          data-testid="vertex-label-text"
+        ></textarea>
+        <div class="swatches" role="group" aria-label="Vertex label color">
+          {#each MEASUREMENT_COLORS as color (color)}
+            <button
+              type="button"
+              class="swatch"
+              class:active={labelColorDraft === color}
+              style="background: {color}"
+              aria-label="Set label color {color}"
+              aria-pressed={labelColorDraft === color}
+              data-testid="vertex-label-swatch-{color}"
+              on:click={() => onVertexLabelColorPick(color)}
+            ></button>
+          {/each}
+        </div>
+      {:else}
+        <label class="notes-label" for="property-notes">Notes</label>
+        <textarea
+          id="property-notes"
+          bind:value={noteDraft}
+          on:blur={onNoteBlur}
+          rows="3"
+          data-testid="identity-notes"
+        ></textarea>
+      {/if}
     </section>
+  </div>
+{:else if $selectedMeasurementIds.size > 1}
+  <div class="panel" data-testid="property-panel-multi">
+    <div class="header-row">
+      <span class="header">{$selectedMeasurementIds.size} measurements selected</span>
+      <button
+        type="button"
+        class="delete-button"
+        title="Delete (Backspace)"
+        on:click={deleteSelectedMeasurement}
+        data-testid="delete-measurement"
+      >
+        Delete
+      </button>
+    </div>
+
+    <section class="section">
+      <span class="notes-label">Set color for all selected</span>
+      <div class="swatches" role="group" aria-label="Color for all selected">
+        {#each MEASUREMENT_COLORS as color (color)}
+          <button
+            type="button"
+            class="swatch"
+            style="background: {color}"
+            aria-label="Set color {color} for all selected"
+            on:click={() => onBulkColorPick(color)}
+            data-testid="multi-swatch-{color}"
+          ></button>
+        {/each}
+      </div>
+    </section>
+
+    {#if multiTotalAreaLabel}
+      <section class="section values">
+        <div class="value-row"><span>Total area</span><strong>{multiTotalAreaLabel}</strong></div>
+      </section>
+    {/if}
+  </div>
+{:else if $backgroundSelected}
+  <div class="panel" data-testid="property-panel-background">
+    <div class="header-row">
+      <span class="header">Background</span>
+    </div>
+
+    <section class="section">
+      <button
+        type="button"
+        class="lock-row"
+        on:click={() => setImageLocked(!imageLocked)}
+        data-testid="background-properties-lock-toggle"
+      >
+        <Icon name={imageLocked ? 'lock' : 'unlock'} size={15} />
+        <span>
+          {imageLocked
+            ? 'Locked — click to unlock'
+            : 'Unlocked — drag a corner to resize, drag the image to move'}
+        </span>
+      </button>
+    </section>
+
+    {#if $activeSurface?.imageRect}
+      <section class="section values">
+        <div class="value-row"><span>Width</span><strong>{Math.round($activeSurface.imageRect.width)} px</strong></div>
+        <div class="value-row"><span>Height</span><strong>{Math.round($activeSurface.imageRect.height)} px</strong></div>
+      </section>
+    {/if}
   </div>
 {/if}
 
@@ -180,10 +555,16 @@
     color: var(--af-ink-primary);
   }
 
-  .delete-button {
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .delete-button,
+  .split-button {
     font-size: 11.5px;
     font-weight: 600;
-    color: var(--af-danger);
     background: none;
     border: none;
     padding: 3px 6px;
@@ -191,8 +572,40 @@
     cursor: pointer;
   }
 
-  .delete-button:hover {
+  .delete-button {
+    color: var(--af-danger);
+  }
+
+  .split-button {
+    color: var(--af-accent);
+  }
+
+  .lock-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 3px 5px;
+    border-radius: var(--af-radius-sm);
+    cursor: pointer;
+    color: var(--af-ink-tertiary);
+  }
+
+  .lock-button:hover {
     background: var(--af-surface-app);
+    color: var(--af-ink-primary);
+  }
+
+  .delete-button:hover:not(:disabled),
+  .split-button:hover:not(:disabled) {
+    background: var(--af-surface-app);
+  }
+
+  .delete-button:disabled,
+  .split-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .section {
@@ -210,6 +623,26 @@
     border: 1px solid var(--af-border-subtle);
     border-radius: var(--af-radius-sm);
     padding: 6px 8px;
+  }
+
+  .lock-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--af-ink-secondary);
+    background: var(--af-surface-app);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 8px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .lock-row:hover {
+    color: var(--af-ink-primary);
+    border-color: var(--af-accent);
   }
 
   .swatches {
@@ -254,10 +687,68 @@
     font-weight: 600;
   }
 
+  .dimension-row {
+    align-items: center;
+  }
+
+  .dimension-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .dimension-input {
+    width: 56px;
+    font: inherit;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-ink-primary);
+    background: var(--af-surface-app);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 3px 6px;
+    text-align: right;
+  }
+
+  .dimension-input:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 1px;
+  }
+
+  .dimension-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .dimension-unit {
+    color: var(--af-ink-secondary);
+  }
+
   .notes-label {
     font-size: 12px;
     font-weight: 600;
     color: var(--af-ink-secondary);
+  }
+
+  .notes-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .done-button {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--af-accent);
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    border-radius: var(--af-radius-sm);
+    cursor: pointer;
+  }
+
+  .done-button:hover {
+    background: var(--af-surface-app);
   }
 
   textarea {

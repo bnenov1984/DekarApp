@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import type { Point, Shape } from '../../core/domain/types.js';
-import type { MeasurementId } from '../../core/domain/entities.js';
+import type { Measurement, MeasurementId } from '../../core/domain/entities.js';
 import {
   editVertex,
   addVertex,
@@ -18,17 +18,25 @@ import { removeVertexCommand } from '../../application/commands/removeVertex.js'
 import { resizeRectangleCommand } from '../../application/commands/resizeRectangle.js';
 import { resizeCircleCommand } from '../../application/commands/resizeCircle.js';
 import { translateMeasurementCommand } from '../../application/commands/translateMeasurement.js';
-import { activeSurface, executeCommand, selectMeasurement } from './studioSession.js';
+import { activeSurface, executeCommand } from './studioSession.js';
 import { snapEnabled } from './drawingSession.js';
 
-// docs/18_DRAWING_ENGINE.md §6 — manipulation of an already-committed Measurement's shape.
-// Entered via double-click (CanvasStage.svelte), exited via Esc or deselection. Every shape type
-// gets *something* here now (broadened from the original Polygon/Curve/Freehand-only vertex
-// editing, per live PO testing): Polygon/Curve/Freehand keep vertex-drag/edge-insert-drag exactly
-// as before; Rectangle gets 4 corner-resize handles; Circle gets 1 radius-resize handle; every
-// shape type (including Rectangle/Circle/Line) additionally gets whole-shape move by dragging the
-// body — hit-tested last, after any more-specific handle, so a corner/vertex/edge drag is never
-// shadowed by the broader body-drag hit test.
+// docs/18_DRAWING_ENGINE.md §6 — manipulation of an already-selected Measurement's shape. Every
+// shape type gets *something* here (broadened from the original Polygon/Curve/Freehand-only
+// vertex editing, per live PO testing): Polygon/Curve/Freehand keep vertex-drag/edge-insert-drag
+// exactly as before; Rectangle gets 4 corner-resize handles; Circle gets 1 radius-resize handle;
+// every shape type (including Rectangle/Circle/Line) additionally gets whole-shape move by
+// dragging the body — hit-tested last, after any more-specific handle, so a corner/vertex/edge
+// drag is never shadowed by the broader body-drag hit test.
+//
+// PO follow-up ("unify object selection and edit state") — there is no separate "vertex-editing"
+// mode anymore. `studioSession.ts`'s `selectedMeasurementId` alone decides whether a shape's
+// handles are shown/draggable (CanvasStage.svelte); this module only knows about the pointer
+// mechanics of an in-progress drag, driven by an explicit `measurementId` the caller already
+// knows is selected — it doesn't track "which shape is currently editable" itself, unlike the
+// deleted `vertexEditingId`/`enterVertexEditing`. The locked-Measurement gate (entities.ts's own
+// contract: "protection from accidental editing") relocates to `pointerDown` below — the sole
+// remaining choke point a drag can start from.
 //
 // Live drag preview calls the Core geometry function directly against the *original*
 // (uncommitted) shape on every pointermove — never through the CommandStack — matching 18 §6's
@@ -87,15 +95,20 @@ interface MoveDrag {
 
 export type VertexEditDrag = VertexDrag | EdgeDrag | CornerDrag | RadiusDrag | MoveDrag;
 
-export const vertexEditingId = writable<MeasurementId | null>(null);
 export const vertexDrag = writable<VertexEditDrag | null>(null);
 
-function measurementShape(measurementId: MeasurementId): Shape | null {
+/** Which Measurement `vertexDrag` (if any) belongs to — set by `pointerDown`, read internally by
+ * `pointerMove`/`pointerUp` so callers don't need to keep re-passing the id every event. Plain
+ * module state, not a store — nothing outside this file needs to react to "which id," only to
+ * `vertexDrag` itself (the live preview). */
+let draggingMeasurementId: MeasurementId | null = null;
+
+function findMeasurementEntity(measurementId: MeasurementId): Measurement | null {
   const surface = get(activeSurface);
   if (!surface) return null;
   for (const layer of surface.layers) {
     const found = layer.measurements.find((m) => m.id === measurementId);
-    if (found) return found.shape;
+    if (found) return found;
   }
   return null;
 }
@@ -115,29 +128,25 @@ function resolveSnap(cursor: Point, modifiers: PointerModifiers, excludeId: Meas
   }).position;
 }
 
-/** 15 §14.4 double-click entry point. Every shape type now qualifies (broadened from the
- * original Polygon/Curve/Freehand-only restriction) — even a shape with no resize handles still
- * gets whole-shape move. */
-export function enterVertexEditing(measurementId: MeasurementId): boolean {
-  const shape = measurementShape(measurementId);
-  if (!shape) return false;
-
-  selectMeasurement(measurementId);
-  vertexEditingId.set(measurementId);
+/** Clears any in-progress drag preview without committing it (Escape, deselection, switching
+ * tools) — the numeric-input counterpart to a pointerUp that never happens. Safe to call even
+ * when nothing is dragging. */
+export function cancelDrag(): void {
   vertexDrag.set(null);
-  return true;
+  draggingMeasurementId = null;
 }
 
-export function exitVertexEditing(): void {
-  vertexEditingId.set(null);
-  vertexDrag.set(null);
-}
-
-export function pointerDown(point: Point, modifiers: PointerModifiers): void {
-  const measurementId = get(vertexEditingId);
-  if (!measurementId) return;
-  const shape = measurementShape(measurementId);
-  if (!shape) return;
+/** 21 §6.3's single click-to-edit entry point (CanvasStage.svelte) — `measurementId` is whichever
+ * shape is already selected (`studioSession.ts`'s `selectedMeasurementId`); this only decides
+ * whether the pointer landed on a handle/edge/vertex/body of *that* shape and, if so, starts the
+ * matching drag preview. Refused for a locked Measurement (entities.ts's own contract, "protection
+ * from accidental editing") — the sole choke point a drag can start from now that there's no
+ * separate "enter edit mode" step. */
+export function pointerDown(point: Point, modifiers: PointerModifiers, measurementId: MeasurementId): void {
+  const measurement = findMeasurementEntity(measurementId);
+  if (!measurement || measurement.locked) return;
+  const shape = measurement.shape;
+  draggingMeasurementId = measurementId;
 
   if (shape.type === 'polygon' || shape.type === 'curve' || shape.type === 'freehand') {
     const vertexIndex = findVertexAt(point, shape, VERTEX_HIT_TOLERANCE);
@@ -214,10 +223,10 @@ export function pointerDown(point: Point, modifiers: PointerModifiers): void {
 }
 
 export function pointerMove(point: Point, modifiers: PointerModifiers): void {
-  const measurementId = get(vertexEditingId);
+  const measurementId = draggingMeasurementId;
   const drag = get(vertexDrag);
   if (!measurementId || !drag) return;
-  const shape = measurementShape(measurementId);
+  const shape = findMeasurementEntity(measurementId)?.shape;
   if (!shape) return;
 
   if (drag.kind === 'move') {
@@ -252,9 +261,10 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
 }
 
 export function pointerUp(): void {
-  const measurementId = get(vertexEditingId);
+  const measurementId = draggingMeasurementId;
   const drag = get(vertexDrag);
   vertexDrag.set(null);
+  draggingMeasurementId = null;
   if (!measurementId || !drag) return;
 
   if (drag.kind === 'vertex') {
@@ -281,10 +291,8 @@ export function pointerUp(): void {
 if (import.meta.env?.DEV && typeof window !== 'undefined') {
   Object.assign(window as object, {
     __areaflowVertexEditDev: {
-      vertexEditingId,
       vertexDrag,
-      enterVertexEditing,
-      exitVertexEditing,
+      cancelDrag,
       pointerDown,
       pointerMove,
       pointerUp,

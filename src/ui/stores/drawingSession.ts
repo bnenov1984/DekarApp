@@ -14,12 +14,17 @@ import { activeSurface, executeCommand, selectMeasurement } from './studioSessio
 // remains the single validation gate — it only ever runs at commit time (buildShapeParams below
 // never calls it directly), matching 23_API.md §2.1's "caller validates interactively" contract.
 //
-// Pan/Curve/AI/Import tools are intentionally absent (docs/UI_CHECKPOINT_REVIEW.md next-slice
-// plan): Pan needs a Surface↔screen viewport transform that doesn't exist yet (ISS-010), Curve's
-// control-point UX isn't specified in enough detail, AI is ISS-009 (its own Application slice),
-// Import needs StorageAdapter (ISS-008).
-
-export type DrawingTool = 'select' | 'polygon' | 'rectangle' | 'circle' | 'freehand' | 'line';
+// Curve/AI tools are intentionally absent (docs/UI_CHECKPOINT_REVIEW.md next-slice plan): Curve's
+// control-point UX isn't specified in enough detail, AI is ISS-009 (its own Application slice).
+//
+// PO follow-up ("replace Select tool with Pan") — 'select' is gone: selection is now a direct,
+// always-available canvas interaction (studioSession.ts) belonging to the *neutral* interaction
+// state (`activeTool === null`), not a toolbar mode. `pan` is a real, explicit toolbar tool
+// (CanvasStage.svelte/viewportSession.ts's shared pan controller) — NOT the default/idle value;
+// entering it (its ToolDock button, or the `H` shortcut) has absolute interaction priority
+// (consumes every drag) exactly like a drawing tool does, and finishing/leaving it returns to
+// neutral, same as any drawing tool's own commit-then-revert-to-neutral behavior below.
+export type DrawingTool = 'pan' | 'polygon' | 'rectangle' | 'circle' | 'freehand' | 'line';
 
 interface PointListDraft {
   readonly kind: 'points';
@@ -52,7 +57,10 @@ const SNAP_TOLERANCE_SURFACE_UNITS = 8;
  * floor, a single fast mousemove could otherwise add hundreds of near-duplicate points. */
 const FREEHAND_MIN_STEP = 3;
 
-export const activeTool = writable<DrawingTool>('select');
+// `null` = the neutral interaction state (the workspace's standard editing state — direct
+// selection/drag-to-edit, studioSession.ts/CanvasStage.svelte) — default on load, and what every
+// drawing tool (and the explicit Pan tool) reverts to once its own operation finishes/is left.
+export const activeTool = writable<DrawingTool | null>(null);
 /** 15 §13 `S` — persistent user preference; `⌥`/Alt is a *temporary* override on top of this,
  * never the other way around (18 §4: "Alt временно изключва"). */
 export const snapEnabled = writable(true);
@@ -211,13 +219,14 @@ function commitDraft(): void {
   );
   selectMeasurement(measurementId);
 
-  if (!serialArmed) activeTool.set('select');
+  if (!serialArmed) activeTool.set(null); // back to the neutral interaction state
 }
 
-/** Switches the active tool, cancelling any in-progress draft (switching tools mid-draw discards
- * it — there is no cross-tool draft handoff). `keepArmed` is the Shift-hold serial-draw request
- * (15 §14.1), read by the caller from the keydown event that triggered the tool switch. */
-export function setTool(tool: DrawingTool, options?: { readonly keepArmed?: boolean }): void {
+/** Switches the active tool (or `null` for the neutral interaction state), cancelling any
+ * in-progress draft (switching tools mid-draw discards it — there is no cross-tool draft
+ * handoff). `keepArmed` is the Shift-hold serial-draw request (15 §14.1), read by the caller from
+ * the keydown event that triggered the tool switch. */
+export function setTool(tool: DrawingTool | null, options?: { readonly keepArmed?: boolean }): void {
   clearDraft();
   serialArmed = options?.keepArmed ?? false;
   activeTool.set(tool);
@@ -229,7 +238,7 @@ export function toggleSnap(): void {
 
 export function pointerDown(point: Point, modifiers: PointerModifiers = NO_MODIFIERS): void {
   const tool = get(activeTool);
-  if (tool === 'select') return;
+  if (tool === null || tool === 'pan') return;
 
   if (tool === 'rectangle' || tool === 'circle') {
     const snapped = resolveSnap(point, modifiers, undefined, undefined);
@@ -265,7 +274,7 @@ export function pointerDown(point: Point, modifiers: PointerModifiers = NO_MODIF
 
 export function pointerMove(point: Point, modifiers: PointerModifiers = NO_MODIFIERS): void {
   const tool = get(activeTool);
-  if (tool === 'select') return;
+  if (tool === null || tool === 'pan') return;
 
   const draft = get(drawingDraft);
 
