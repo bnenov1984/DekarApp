@@ -110,14 +110,12 @@ AreaFlow
 
 ## §3. Navigation Structure
 
-**Плоска до крайност: 2 екрана + overlays.** Home ⇄ Studio. Всичко останало е overlay върху текущия контекст.
+**Един работен екран + overlays.** Studio е първичната работна повърхност на приложението. При стартиране се отваря директно с валиден празен проект. Всички останали потоци (Import, Open, Export, Settings и др.) започват от Studio, а не от отделен начален екран.
 
-- Home → Studio: клик на проект или Start действие. 1 клик.
-- Studio → Home: логото/back. 1 клик. Проектът се пази автоматично (без "Save?" диалог — undo историята покрива връщането).
 - Marketplace, Settings, Export: overlays със `Esc` за затваряне; URL-адресируеми (deep links за PWA).
 - Command Palette (⌘K / Ctrl+K): достъпен навсякъде; търси действия, инструменти, измервания по име, workspaces, extensions, help.
 
-**Обосновка:** Всяко ниво навигация е данък върху "Minimal clicks". Bluebeam/ArcGIS показват как дълбочината убива увереността. Overlay моделът пази пространствения контекст на потребителя — той никога не "напуска" работата си, за да настрои нещо.
+**Обосновка:** Всяко ниво навигация е данък върху "Minimal clicks". Overlay моделът пази пространствения контекст на потребителя — той никога не "напуска" работата си, за да настрои нещо.
 
 ---
 
@@ -134,7 +132,7 @@ O5  Workspace Switcher    (popover в топ лентата)
 O6  Onboarding "first measurement" hints (еднократен, ненатрапчив слой)
 ```
 
-Няма трети екран. Ако бъдеща функция "изисква нов екран", първият въпрос е защо не е overlay или панел.
+Стандартният потребителски поток използва един основен работен екран (Studio). Нови екрани се допускат само ако не могат да бъдат реализирани като overlay, панел или popover.
 
 ---
 
@@ -241,7 +239,7 @@ O6  Onboarding "first measurement" hints (еднократен, ненатрап
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Dock слотове (≤10, P3): Select · Pan · Rect · Polygon · Circle · Curve · Freehand · Distance │ AI ✦ │ Import +. Вариантите на форма са в long-press/стрелка popover над слота (FigJam модел).
+Dock слотове (≤10, P3): Pan · Rect · Polygon · Circle · Curve · Freehand · Distance │ AI ✦ │ Import +. Вариантите на форма са в long-press/стрелка popover над слота (FigJam модел).
 
 ### W2. Studio — първо отваряне (нулев chrome)
 
@@ -365,32 +363,58 @@ Hi-fi mockup на Studio (W1 състоянието) е доставен кат�
 
 | Клавиш | Действие | | Клавиш | Действие |
 |--------|----------|-|--------|----------|
-| `V` | Select | | `Esc` | Отказ/затваряне на overlay/deselect |
-| `H` / `Space` (hold) | Pan | | `Enter` | Затваряне на полигон / Accept ghost |
-| `R` | Rectangle | | `⌫` | Изтриване на селекция |
-| `P` | Polygon | | `⌘Z` / `⌘⇧Z` | Undo / Redo |
-| `C` | Circle | | `⌘K` | Command Palette |
-| `B` | Curve | | `⌘E` | Export overlay |
-| `F` | Freehand | | `[` `]` | Предишно/следващо измерване |
-| `D` | Distance | | `1`…`9` (чертане) | Числов вход за дължина (P9, pro слой) |
-| `A` | AI detect ✦ | | `M` | Toggle Measurement List |
+| `H` / `Space` (hold) | Pan | | `Esc` | Отказ/затваряне на overlay/deselect |
+| `R` | Rectangle | | `Enter` | Затваряне на полигон / Accept ghost |
+| `P` | Polygon | | `⌫` | Изтриване на селекция |
+| `C` | Circle | | `⌘Z` / `⌘⇧Z` | Undo / Redo |
+| `B` | Curve | | `⌘K` | Command Palette |
+| `F` | Freehand | | `⌘E` | Export overlay |
+| `D` | Distance | | `[` `]` | Предишно/следващо измерване |
+| `A` | AI detect ✦ | | `1`…`9` (чертане) | Числов вход за дължина (P9, pro слой) |
 | `S` | Toggle snap | | `U` | Смяна на единици (cycle) |
 | `+` `-` `0` | Zoom in/out/fit | | `⇧` (hold, чертане) | Ограничаване до 0/45/90° |
 | `X` | Split (селектиран полигон, F7) | | `⌥` (hold) | Временно изключване на snap |
+
+Selection is a direct canvas interaction and is not represented as a toolbar mode or keyboard-selectable tool.
 
 ---
 
 ## §14. Interaction Patterns
 
-1. **Draw → auto-select**: завършена фигура се самоселектира и връща в Select (Excalidraw). `⇧`+инструмент задържа инструмента за серийно чертане (roofing/landscaping нужда).
+1. **Draw → auto-select**: завършена фигура се самоселектира и връща в неутралното състояние на взаимодействие. `⇧`+инструмент задържа инструмента за серийно чертане (roofing/landscaping нужда).
 2. **Live computation**: стойността тече до курсора по време на чертане; сегментните дължини се показват на всяка страна при чертане и селекция.
 3. **Snap (Drawing Engine)**: към върхове, ръбове, ъгли 0/45/90°, и към mapping grid при карти. AutoCAD-стил визуални маркери (P8): различен глиф за връх/ръб/ъгъл. `⌥` временно изключва.
-4. **Двоен клик = навътре** (Figma): върху фигура → vertex editing; върху etiket → преименуване; върху стойност в списъка → редакция.
-5. **Директна манипулация преди панели**: влачене на връх, на ръб (добавя връх), на фигура; ротация през дръжка. Панелът е за точност, платното — за скорост.
+4. **Single click selects the object and immediately exposes all editing affordances appropriate for its state.**
+   - unlocked → handles
+   - locked → outline only
+
+   Double click is reserved exclusively for the vertex-label workflow.
+5. **Директна манипулация преди панели**: влачене на връх, на ръб (добавя връх), на фигура; ротация през дръжка. Панелът е за точност, платното — за скорост. Locked objects remain inspectable but not editable.
 6. **Контекстно меню** (десен клик/long-press): второстепенни действия за селекцията (duplicate, lock, група, изпращане към extension). Никога единствен път към функция (анти-P16).
 7. **Undo/Redo е глобален и безусловен** — включва календриране, AI accept, изтривания. "No unnecessary dialogs" е възможно само защото undo покрива грешките: диалозите за потвърждение се заменят с toast + Undo бутон (8 сек).
 8. **Drag & drop навсякъде**: файл, пуснат върху което и да е състояние на приложението, става Surface.
 9. **Инерционен pan, pinch zoom, scroll zoom** — Maps идиоми без изненади.
+10. **Pan (explicit tool or temporary `Space`/middle-mouse override) has absolute interaction priority**: докато е активен, всяко влачене премества viewport-а, независимо дали започва върху фигура, дръжка, етикет, фон или празно платно. Pan never changes application selection state — не селектира, не деселектира, не мести и не редактира обект.
+
+---
+
+## Core Interaction Model
+
+### Workspace states
+
+1. **Neutral**
+   - click selects
+   - drag moves selected objects
+   - handles edit geometry
+
+2. **Drawing Tool**
+   - clicks create geometry
+   - Shift optionally keeps the tool active
+
+3. **Pan**
+   - explicit tool or temporary Space override
+   - all drag gestures move the viewport
+   - selection state is preserved
 
 ---
 
@@ -484,7 +508,7 @@ Hi-fi mockup на Studio (W1 състоянието) е доставен кат�
 
 Мобилният е **пълноценен измерител, редуциран редактор**: всичко се вижда и мери; тежката организация (групи, отчети, batch операции) остава удобна на голям екран. Това е UX позиция, не техническо ограничение — PWA-то е същото приложение.
 
-1. **Dock остава долу** — на палечна дистанция (P3 печалбата); слотовете се редуцират до: Select · Polygon · Rect · Distance · ✦ · ⋯ (останалите в ⋯ sheet).
+1. **Dock остава долу** — на палечна дистанция (P3 печалбата); слотовете се редуцират до: Pan · Polygon · Rect · Distance · ✦ · ⋯ (останалите в ⋯ sheet).
 2. **Прецизно поставяне на връх с палец = loupe**: докосване-и-задържане показва лупа с offset прицел (iOS text cursor идиом); влаченето позиционира, пускането поставя. Хаптика при snap.
 3. **Едно докосване никога не чертае** без армиран инструмент; two-finger = pan/zoom винаги, без конфликт с чертане.
 4. Панелите → bottom sheets (peek: MeasurementChip лента със сумата; swipe up: пълният списък).

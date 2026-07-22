@@ -101,21 +101,26 @@ Ghost ──(кандидатства за)──▶ Measurement              [�
 Не UX, а адресируемост: всеки обект има канонично място и (в PWA) дълбок линк.
 
 ```
-Home
-├── Project ─────────────── Recent карта / Start действие
-│   ├── Surface ─────────── Surface tabs в Studio (при >1)
-│   │   ├── Calibration ─── ScaleChip (статус) → календриращ flow
-│   │   └── Layer ───────── ляв панел, таб Layers
-│   │       └── Measurement ┬─ директно: клик на фигурата (платно)
-│   │                       ├─ таблично: ред в Measurement List
-│   │                       └─ команда: ⌘K по име
-│   │           └── Shape ── двоен клик върху Measurement (vertex editing)
-│   ├── Report ───────────── Export (топ лента) → overlay
-│   └── Project Settings ─── име (топ лента) / Settings overlay
-├── Workspace ────────────── workspace chip (топ лента) → switcher
-├── Extension ────────────── десен панел, секция Extensions → Marketplace overlay
-├── App Settings ─────────── Settings overlay (навсякъде)
-└── Ghost ────────────────── само на платното, само докато съществува
+Studio
+└── Project ─────────────── Recent карта / Start действие
+    ├── Surface ─────────── Surface tabs в Studio (при >1)
+    │   ├── Calibration ─── ScaleChip (статус) → календриращ flow
+    │   └── Layer ───────── ляв панел, таб Layers
+    │       └── Measurement ┬─ директно: клик на фигурата (платно)
+    │                       ├─ таблично: ред в Measurement List
+    │                       └─ команда: ⌘K по име
+    │           └── Shape ── двоен клик върху Measurement (vertex editing)
+    ├── Report ───────────── Export (топ лента) → overlay
+    └── Project Settings ─── име (топ лента) / Settings overlay
+```
+
+Достъпни от Studio (overlays, извън дървото на Project):
+
+```
+Workspace ────────────── workspace chip (топ лента) → switcher
+Extension ────────────── десен панел, секция Extensions → Marketplace overlay
+App Settings ─────────── Settings overlay (навсякъде)
+Ghost ────────────────── само на платното, само докато съществува
 ```
 
 Правило: **всеки персистиран обект е достижим по ≥2 пътя** (пространствен — платното; и списъчен — панел/⌘K), защото списъчният път е и accessibility гаранцията (D8). Ghost е изключението: съществува само пространствено, което е съзнателно — той още не е данни.
