@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:svelte": "svelte-check --tsconfig ./tsconfig.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "deploy": "npm run build && gh-pages -d dist"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
@@ -22,6 +24,7 @@
     "eslint-plugin-svelte": "^3.20.0",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^3.23.1",
+    "gh-pages": "^6.3.0",
     "globals": "^17.7.0",
     "svelte": "^4.2.20",
     "svelte-check": "^4.7.2",
