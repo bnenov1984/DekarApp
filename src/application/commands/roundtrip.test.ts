@@ -7,6 +7,10 @@ import { duplicateMeasurementsCommand } from './duplicateMeasurement.js';
 import { editVertexCommand } from './editVertex.js';
 import { removeVertexCommand } from './removeVertex.js';
 import { splitCommand } from './split.js';
+import { splitIntoPartsCommand } from './splitIntoParts.js';
+import { resizeRectangleCommand } from './resizeRectangle.js';
+import { resizeCircleCommand } from './resizeCircle.js';
+import { translateMeasurementCommand } from './translateMeasurement.js';
 import { recalibrateCommand } from './recalibrate.js';
 import { updateIdentityCommand } from './updateIdentity.js';
 import { reorderMeasurementsCommand } from './reorderMeasurements.js';
@@ -748,5 +752,115 @@ describe('Failed command → stack не се замърсява (self-intersecti
     ).toThrow();
 
     expect(stack.undoDepth).toBe(depthBefore); // the failed command never entered the stack
+  });
+});
+
+// entities.ts's own contract for `locked`: move/resize/vertex-edit/delete/split are all refused
+// while true. Previously enforced only by the UI layer's own pre-checks (studioSession.ts,
+// vertexEditSession.ts, splitSession.ts) — these confirm the Application-layer commands
+// themselves now refuse too, so a caller that dispatches a command directly (bypassing the UI
+// session entirely) can't silently violate the lock.
+describe('Locked measurement refuses geometry-mutating commands', () => {
+  const lockedSquare: Measurement = { ...makeSquareMeasurement('m1'), locked: true };
+  const lockedRect: Measurement = {
+    id: 'm1',
+    shape: { type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 },
+    identity: { name: 'Rect', color: '#2E7D32' },
+    provenance: 'Manual',
+    locked: true,
+  };
+  const lockedCircle: Measurement = {
+    id: 'm1',
+    shape: { type: 'circle', center: { x: 50, y: 50 }, radius: 20 },
+    identity: { name: 'Circle', color: '#1565C0' },
+    provenance: 'Manual',
+    locked: true,
+  };
+
+  it('refuses delete', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() => deleteMeasurementsCommand({ surface: initial, measurementIds: ['m1'] })).toThrow();
+  });
+
+  it('refuses split (manual line-draw)', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() =>
+      splitCommand({
+        surface: initial,
+        parentMeasurementId: 'm1',
+        splitLine: [{ x: 5, y: -1 }, { x: 5, y: 11 }],
+        childIds: ['c1', 'c2'],
+      }),
+    ).toThrow();
+  });
+
+  it('refuses split-into-parts', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() =>
+      splitIntoPartsCommand({
+        surface: initial,
+        parentMeasurementId: 'm1',
+        childShapes: [
+          { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }, { x: 0, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 5, y: 10 }] },
+        ],
+        childIds: ['c1', 'c2'],
+      }),
+    ).toThrow();
+  });
+
+  it('refuses addVertex', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() => addVertexCommand({ surface: initial, measurementId: 'm1', edgeIndex: 0, position: { x: 5, y: 0 } })).toThrow();
+  });
+
+  it('refuses removeVertex', () => {
+    const pentagon: Measurement = {
+      ...lockedSquare,
+      shape: { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 15, y: 5 }, { x: 10, y: 10 }, { x: 0, y: 10 }] },
+    };
+    const initial = makeTestSurface([pentagon]);
+    expect(() => removeVertexCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0 })).toThrow();
+  });
+
+  it('refuses editVertex', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() => editVertexCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, newPosition: { x: 1, y: 1 } })).toThrow();
+  });
+
+  it('refuses translateMeasurement (whole-shape move)', () => {
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() => translateMeasurementCommand({ surface: initial, measurementId: 'm1', dx: 5, dy: 5 })).toThrow();
+  });
+
+  it('refuses resizeRectangle (drag)', () => {
+    const initial = makeTestSurface([lockedRect]);
+    expect(() => resizeRectangleCommand({ surface: initial, measurementId: 'm1', corner: 2, newPosition: { x: 120, y: 60 } })).toThrow();
+  });
+
+  it('refuses resizeRectangleDimensions (typed input)', () => {
+    const initial = makeTestSurface([lockedRect]);
+    expect(() => resizeRectangleDimensionsCommand({ surface: initial, measurementId: 'm1', width: 120, height: 60 })).toThrow();
+  });
+
+  it('refuses resizeCircle (drag)', () => {
+    const initial = makeTestSurface([lockedCircle]);
+    expect(() => resizeCircleCommand({ surface: initial, measurementId: 'm1', newEdgePosition: { x: 85, y: 50 } })).toThrow();
+  });
+
+  it('refuses resizeCircleToRadius (typed input)', () => {
+    const initial = makeTestSurface([lockedCircle]);
+    expect(() => resizeCircleToRadiusCommand({ surface: initial, measurementId: 'm1', radius: 35 })).toThrow();
+  });
+
+  it('does NOT refuse allowed edits — identity, manual area, vertex label, label offset, duplicate', () => {
+    // entities.ts's own doc: locked only blocks move/resize/vertex-edit/delete/split. These stay
+    // usable so a locked Measurement is still fully renameable/annotatable/duplicable.
+    const initial = makeTestSurface([lockedSquare]);
+    expect(() => updateIdentityCommand({ surface: initial, measurementId: 'm1', identity: { ...lockedSquare.identity, name: 'Renamed' } })).not.toThrow();
+    expect(() => setVertexLabelCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, label: { text: 'A', color: '#000' } })).not.toThrow();
+    expect(() =>
+      duplicateMeasurementsCommand({ surface: initial, measurementIds: ['m1'], newMeasurementIds: ['m1-copy'], dx: 5, dy: 5 }),
+    ).not.toThrow();
   });
 });

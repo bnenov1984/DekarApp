@@ -17,6 +17,12 @@ export function translateMeasurementCommand(params: TranslateMeasurementParams):
   const before = params.surface;
   const found = findMeasurement(before, params.measurementId);
   if (!found) throw new Error(`translateMeasurementCommand: measurement '${params.measurementId}' not found`);
+  // entities.ts's own contract for `locked` — whole-shape move is refused, same "protection from
+  // accidental editing" as resize/vertex-edit/delete/split. Enforced here so a direct caller can't
+  // bypass the UI layer's own pre-check.
+  if (found.measurement.locked) {
+    throw new Error(`translateMeasurementCommand: measurement '${params.measurementId}' is locked`);
+  }
 
   return {
     target: before.id,

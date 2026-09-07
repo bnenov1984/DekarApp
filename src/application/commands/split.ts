@@ -26,6 +26,10 @@ export function splitCommand(params: SplitParams): Command<Surface> {
   const before = params.surface;
   const found = findMeasurement(before, params.parentMeasurementId);
   if (!found) throw new Error(`splitCommand: measurement '${params.parentMeasurementId}' not found`);
+  // entities.ts's own contract for `locked` — split is refused, same "protection from accidental
+  // editing" as move/resize/vertex-edit/delete. Enforced here (not just splitSession.ts's own
+  // pre-check in startSplit) so a direct caller can't bypass it.
+  if (found.measurement.locked) throw new Error(`splitCommand: measurement '${params.parentMeasurementId}' is locked`);
 
   const parentShape = found.measurement.shape;
   if (parentShape.type !== 'polygon') {

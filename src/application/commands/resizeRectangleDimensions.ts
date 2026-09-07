@@ -21,6 +21,12 @@ export function resizeRectangleDimensionsCommand(params: ResizeRectangleDimensio
   if (shape.type !== 'rectangle') {
     throw new Error(`resizeRectangleDimensionsCommand: measurement '${params.measurementId}' is not a rectangle`);
   }
+  // entities.ts's own contract for `locked` — resize is refused, same "protection from accidental
+  // editing" as move/vertex-edit/delete/split. Enforced here so a direct caller can't bypass the
+  // UI layer's own pre-check.
+  if (found.measurement.locked) {
+    throw new Error(`resizeRectangleDimensionsCommand: measurement '${params.measurementId}' is locked`);
+  }
 
   return {
     target: before.id,

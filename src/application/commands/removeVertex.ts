@@ -23,6 +23,12 @@ export function removeVertexCommand(params: RemoveVertexParams): Command<Surface
   const before = params.surface;
   const found = findMeasurement(before, params.measurementId);
   if (!found) throw new Error(`removeVertexCommand: measurement '${params.measurementId}' not found`);
+  // entities.ts's own contract for `locked` — vertex-edit is refused, same "protection from
+  // accidental editing" as move/resize/delete/split. Enforced here (not just
+  // vertexEditSession.ts's own pre-check in enterVertexEditing) so a direct caller can't bypass it.
+  if (found.measurement.locked) {
+    throw new Error(`removeVertexCommand: measurement '${params.measurementId}' is locked`);
+  }
 
   return {
     target: before.id,

@@ -30,7 +30,13 @@ export function deleteMeasurementsCommand(params: DeleteMeasurementsParams): Com
   // never be treated as "already removed, not found" on its second occurrence.
   const ids = [...new Set(params.measurementIds)];
   for (const id of ids) {
-    if (!findMeasurement(before, id)) throw new Error(`deleteMeasurementsCommand: measurement '${id}' not found`);
+    const found = findMeasurement(before, id);
+    if (!found) throw new Error(`deleteMeasurementsCommand: measurement '${id}' not found`);
+    // entities.ts's own contract for `locked` — delete is refused, same "protection from
+    // accidental editing" as move/resize/vertex-edit/split. Enforced here (not just by the UI
+    // layer's own pre-filter, studioSession.ts's deleteSelectedMeasurement) so any caller that
+    // dispatches this command directly can't silently bypass it.
+    if (found.measurement.locked) throw new Error(`deleteMeasurementsCommand: measurement '${id}' is locked`);
   }
 
   return {

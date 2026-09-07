@@ -20,6 +20,12 @@ export function resizeCircleToRadiusCommand(params: ResizeCircleToRadiusParams):
   if (shape.type !== 'circle') {
     throw new Error(`resizeCircleToRadiusCommand: measurement '${params.measurementId}' is not a circle`);
   }
+  // entities.ts's own contract for `locked` — resize is refused, same "protection from accidental
+  // editing" as move/vertex-edit/delete/split. Enforced here so a direct caller can't bypass the
+  // UI layer's own pre-check.
+  if (found.measurement.locked) {
+    throw new Error(`resizeCircleToRadiusCommand: measurement '${params.measurementId}' is locked`);
+  }
 
   return {
     target: before.id,
