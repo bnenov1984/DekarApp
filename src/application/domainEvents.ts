@@ -29,7 +29,24 @@ export type DomainEvent =
       readonly childIds: readonly [MeasurementId, MeasurementId];
     }
   | { readonly type: 'MeasurementDeleted'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
-  | { readonly type: 'MeasurementsReordered'; readonly surfaceId: SurfaceId };
+  | { readonly type: 'MeasurementsReordered'; readonly surfaceId: SurfaceId }
+  | { readonly type: 'MeasurementLockToggled'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
+  | { readonly type: 'SurfaceImageResized'; readonly surfaceId: SurfaceId }
+  | { readonly type: 'SurfaceImageLockToggled'; readonly surfaceId: SurfaceId }
+  | {
+      readonly type: 'MeasurementVertexLabelSet';
+      readonly surfaceId: SurfaceId;
+      readonly measurementId: MeasurementId;
+      readonly vertexIndex: number;
+    }
+  | { readonly type: 'MeasurementManualAreaSet'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
+  | { readonly type: 'MeasurementLabelMoved'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
+  | {
+      readonly type: 'MeasurementSplitIntoParts';
+      readonly surfaceId: SurfaceId;
+      readonly parentId: MeasurementId;
+      readonly childIds: readonly MeasurementId[];
+    };
 
 export type DomainEventListener = (event: DomainEvent) => void;
 
