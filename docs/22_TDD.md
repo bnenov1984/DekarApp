@@ -49,8 +49,16 @@
 | INV-10 | Workspace/Extension каталожна промяна не мутира Project данни | T-INV-10 | Integration (промени каталога, провери Project снимка непроменена) | Application |
 | INV-11 | Report е снимка към момента на генериране | T-INV-11 | Integration (генерирай Report, редактирай Measurement, провери Report непроменен) | Application |
 | INV-12 | Всяка команда освен ProjectDeleted има inverse | T-INV-12 | Property-based round-trip: `apply(inverse(op), apply(op, state)) == state` за всеки Command тип | Application |
+| INV-13 | Заключен Measurement отказва move/resize/vertex-edit/delete/split на Application ниво | T-INV-13 | Integration (`roundtrip.test.ts` — "Locked measurement refuses geometry-mutating commands", 12 случая) | Application |
+| INV-14 | Split-into-parts: Σ(children.area) == parent.area за N деца | T-INV-14 | Property-based (`core/drawing/splitParts.test.ts`) + Integration inheritance (`roundtrip.test.ts` — "SplitIntoParts") | Core + Application |
+| INV-15 | `manualArea` фактор пропорционално точен през геометрични редакции; наследен буквално от Split/Split-into-parts децата | T-INV-15 | Integration (`roundtrip.test.ts` — "SetManualArea", "SplitIntoParts — inherits manualArea") | Application |
+| INV-16 | Скрит Measurement не се чертае/hit-test-ва, но остава в Layers списъка и Σ Total | T-INV-16 | Unit (`sceneRenderer.test.ts`) + Integration (`studioSession.test.ts` — "skips a hidden measurement") | UI |
+| INV-17 | `vertexLabels` index-aligned през addVertex/removeVertex | T-INV-17 | Integration (`roundtrip.test.ts` — "AddVertex/RemoveVertex — shifts vertex labels") | Application |
+| INV-18 | `Surface.imageLocked` блокира преместване/resize на фоновото изображение | T-INV-18 | Integration (`roundtrip.test.ts` — "SetImageLocked") | Application |
 
 **Правило:** нов Command тип, добавен в бъдеще, не влиза в codebase без съответен T-INV-12 round-trip случай — CI проверка (не само code review) в Phase 4.
+
+**Забележка за INV-13…INV-18:** добавени ретроактивно (14 §4-та собствена бележка) — тестовете вече съществуваха преди тази таблица да ги цитира изрично; редовете тук само правят traceability-то, което §1-вия принцип на този документ изисква, явно.
 
 ---
 
