@@ -40,21 +40,28 @@ export function splitCommand(params: SplitParams): Command<Surface> {
       if (!result.ok) throw new Error(`splitCommand: ${result.reason}`);
       const [shapeA, shapeB] = result.value;
 
+      // QA fix (manual area) — same inheritance splitIntoParts.ts's Equal/Random path already
+      // does: both children get the parent's manual-area scale factor verbatim when set. Without
+      // this, the "Manual split" line-draw fallback silently dropped a manual area on split,
+      // reverting both children to plain geometric/calibrated area.
+      const parent = found.measurement;
       const childA: Measurement = {
         id: params.childIds[0],
         shape: shapeA,
-        identity: { name: `${found.measurement.identity.name} — Part 1`, color: found.measurement.identity.color },
+        identity: { name: `${parent.identity.name} — Part 1`, color: parent.identity.color },
         provenance: 'Manual',
         parentId: params.parentMeasurementId,
         locked: false,
+        ...(parent.manualArea && { manualArea: parent.manualArea }),
       };
       const childB: Measurement = {
         id: params.childIds[1],
         shape: shapeB,
-        identity: { name: `${found.measurement.identity.name} — Part 2`, color: found.measurement.identity.color },
+        identity: { name: `${parent.identity.name} — Part 2`, color: parent.identity.color },
         provenance: 'Manual',
         parentId: params.parentMeasurementId,
         locked: false,
+        ...(parent.manualArea && { manualArea: parent.manualArea }),
       };
 
       const withA = addMeasurement(before, found.layerId, childA);
