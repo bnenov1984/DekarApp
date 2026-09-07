@@ -12,7 +12,13 @@ export interface Point {
   readonly y: number;
 }
 
-export type Unit = 'px' | 'm' | 'm2' | 'ft' | 'ft2' | 'ha' | 'acre';
+// PO request (expanded unit system) — mm/cm added alongside the existing m (metric) and in added
+// alongside ft (imperial), plus their area counterparts. 'px' remains the uncalibrated-mode unit
+// (17 §7); 'ha'/'acre' are unchanged, larger-scale area units. The area unit is always what a
+// caller actually requests from MeasurementEngine.compute() (17 §2) — the paired *length* unit
+// (mm/cm/m/in/ft) is derived internally (`lengthUnitFor`, measurementEngine.ts) for
+// perimeter/segment/radius fields, never passed as `unit` directly for an area-producing Shape.
+export type Unit = 'px' | 'mm' | 'cm' | 'm' | 'in' | 'ft' | 'mm2' | 'cm2' | 'm2' | 'in2' | 'ft2' | 'ha' | 'acre';
 
 // --- Shape (Value Object, 14 §3): replaced wholesale on every edit, never mutated in place. ---
 

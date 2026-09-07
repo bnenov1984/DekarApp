@@ -1,4 +1,4 @@
-import type { Calibration, Provenance, Shape } from './types.js';
+import type { Calibration, Point, Provenance, Shape } from './types.js';
 
 // docs/14_DOMAIN_MODEL.md §3 — the Entity types (have identity that survives content changes),
 // as opposed to types.ts's Value Objects (Shape, Calibration — replaced wholesale, no identity
@@ -16,6 +16,25 @@ export interface MeasurementIdentity {
   readonly name: string;
   readonly color: string;
   readonly note?: string;
+  /** PO follow-up (UX review, item A5 "eye icon = real visibility") — hides this Measurement
+   * entirely: not drawn (sceneRenderer.ts's drawSurface), not hit-testable on canvas
+   * (studioSession.ts's findMeasurementAt), and its chip/vertex-label chips don't render
+   * (CanvasStage.svelte) — same "eye = object visibility" convention every layer-based tool
+   * already uses, rather than a bespoke "just its label" toggle. Still fully selectable/
+   * renameable/deletable from the Layers panel (D8: every canvas gesture has a list
+   * counterpart, but hiding only ever removes the *canvas* one). Deliberately does NOT exclude
+   * a hidden Measurement from the Layers panel's Σ Total area — it's still a real, measured
+   * area, just decluttered from the current view. Toggled by the eye icon in the Layers panel,
+   * lives on Identity (not a UI store) so it persists and rides the existing updateIdentityCommand
+   * undo path. `undefined`/`false` both mean visible — visible is the default. */
+  readonly hidden?: boolean;
+}
+
+/** PO request (per-vertex annotation) — a short label anchored to one vertex/corner/handle of a
+ * Measurement's Shape, with its own font color (independent of the Measurement's own color). */
+export interface VertexLabel {
+  readonly text: string;
+  readonly color: string;
 }
 
 /** 14 §2.1/§3 — Entity. `parentId` present only for Split children (PD-009); the parent
@@ -28,7 +47,46 @@ export interface Measurement {
   /** immutable after creation — INV-6 (14 §4) */
   readonly provenance: Provenance;
   readonly parentId?: MeasurementId;
+  /** PO follow-up ("per-measurement lock") — 11 §"Locked" state (защита от случайна редакция —
+   * protection from accidental editing): move/resize/vertex-edit/delete/split are all refused
+   * while `true` (vertexEditSession.ts's enterVertexEditing, studioSession.ts's
+   * deleteSelectedMeasurement, splitSession.ts's startSplit). Identity edits (rename/recolor/note/
+   * hide) and Duplicate stay allowed — a duplicate is always born unlocked (createMeasurement.ts/
+   * duplicateMeasurement.ts), same "the new copy doesn't inherit protection" convention as every
+   * other per-instance flag on this type. Toggled via setMeasurementLockedCommand, same lock
+   * icon/menu-item pattern as the Background layer's own `Surface.imageLocked`. */
   readonly locked: boolean;
+  /** PO request (per-vertex annotation) — sparse, index-aligned with whichever "handle point"
+   * list sceneRenderer.ts's `resizeHandlePoints`/hitTest.ts's `findHandleIndexAt` derive for this
+   * Shape's type (vertex index for Polygon/Curve/Freehand; corner 0-3 for Rectangle; the single
+   * radius handle, index 0, for Circle — Line has no handles, so never a target). `null` entries
+   * are "no label at this index"; trailing `null`s are trimmed so this stays `undefined` whenever
+   * no vertex actually has a label. Kept in sync with vertex insertion/removal by
+   * addVertexCommand/removeVertexCommand (application/vertexLabels.ts) — editVertex/resize/
+   * translate never change vertex count or order, so they don't need to touch this at all. */
+  readonly vertexLabels?: readonly (VertexLabel | null)[];
+  /** PO request (manual area) — an explicit, user-typed real-world area (m²), independent of
+   * Surface.calibration: lets a parcel with a known real area be recorded even when no map/image
+   * scale is (or can be) calibrated. Stored as an area-per-px² scale factor derived once, at
+   * set-time, from the shape's *current* geometric px² area (`shoelaceArea`), rather than a
+   * frozen absolute number — later geometry edits (drag a vertex, Split's children) recompute
+   * the *displayed* area from the shape's live px² area through this same factor, so the number
+   * stays proportionally accurate instead of silently going stale the moment the shape's size
+   * visibly changes. The field itself is never touched by geometry-editing commands, so "this
+   * Measurement has a manual area" survives edits — only the number shown for it follows the
+   * shape. Split children (application/commands/splitIntoParts.ts) inherit the parent's factor
+   * verbatim, which is what makes "1200 m² split into 3 equal parts -> ~400/400/400 m²" fall out
+   * automatically from the geometry alone, with no separate distribution math.
+   * `undefined` = area is geometry/calibration-derived (existing behavior, unchanged) — this is
+   * also the field the UI reads to know whether an area is "manual" or "calculated". */
+  readonly manualArea?: { readonly squareMetersPerSquarePixel: number };
+  /** PO request (draggable polygon labels) — Surface-space delta from `shapeCentroid(shape)`
+   * (centroid.ts), Polygon only. `undefined` = default centroid position (unchanged prior
+   * behavior). Stored as a delta rather than an absolute point so the label naturally tracks the
+   * shape if it's ever moved as a whole; `labelDragSession.ts` only ever accepts a candidate
+   * whose `centroid + delta` lands inside the polygon (`hitTest.ts`'s `pointInPolygon`), so this
+   * field is never persisted pointing outside its own shape. */
+  readonly labelOffset?: { readonly dx: number; readonly dy: number };
 }
 
 export interface Layer {
@@ -54,6 +112,19 @@ export interface Surface {
   readonly kind: SurfaceKind;
   readonly calibration: Calibration;
   readonly layers: readonly Layer[];
+  /** PO request (resizable imported image) — only meaningful when `kind === 'image'`. Undefined
+   * until the user first resizes it, at which point CanvasStage's "contain"-fit default
+   * (`computeContainRect`, sceneRenderer.ts) stops applying and this becomes the explicit,
+   * persisted rect (Surface-space == CSS-pixel-space, ISS-010). Deliberately shaped like a
+   * Rectangle Measurement's geometry (rotation fixed at 0, same as Rectangle's own current scope
+   * line) so the already-tested `resizeRectangleCorner`/`findRectangleCornerAt` apply unchanged
+   * rather than duplicating that math for a second shape kind. */
+  readonly imageRect?: { readonly origin: Point; readonly width: number; readonly height: number };
+  /** PO request (lockable Background layer, Photoshop-style) — `undefined` and `true` both mean
+   * locked (locked is the safe default: a freshly-imported image is locked until the user
+   * explicitly unlocks it, so it can't be nudged out of place while drawing measurements over
+   * it). Only `false` means unlocked — resizable/movable. */
+  readonly imageLocked?: boolean;
 }
 
 export interface ReportSnapshotEntry {
