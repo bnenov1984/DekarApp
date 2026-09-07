@@ -2,16 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { CommandStack } from '../commandStack.js';
 import { createMeasurementCommand } from './createMeasurement.js';
 import { commitGhostCommand } from './commitGhost.js';
-import { deleteMeasurementCommand } from './deleteMeasurement.js';
+import { deleteMeasurementsCommand } from './deleteMeasurement.js';
+import { duplicateMeasurementsCommand } from './duplicateMeasurement.js';
 import { editVertexCommand } from './editVertex.js';
 import { removeVertexCommand } from './removeVertex.js';
 import { splitCommand } from './split.js';
 import { recalibrateCommand } from './recalibrate.js';
 import { updateIdentityCommand } from './updateIdentity.js';
 import { reorderMeasurementsCommand } from './reorderMeasurements.js';
+import { resizeImageCommand } from './resizeImage.js';
+import { setImageLockedCommand } from './setImageLocked.js';
+import { setVertexLabelCommand } from './setVertexLabel.js';
+import { addVertexCommand } from './addVertex.js';
+import { resizeRectangleDimensionsCommand } from './resizeRectangleDimensions.js';
+import { resizeCircleToRadiusCommand } from './resizeCircleToRadius.js';
+import { setMeasurementLockedCommand } from './setMeasurementLocked.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { findMeasurement } from '../surfaceOps.js';
-import type { Surface } from '../../core/domain/entities.js';
+import type { Measurement, Surface } from '../../core/domain/entities.js';
 
 // Round-trip shape required by the task, for every scenario below:
 //   initial state → execute → expected mutated state → undo → exact initial state
@@ -44,6 +52,96 @@ describe('CreateMeasurement — single command round trip', () => {
   });
 });
 
+// PO follow-up (UX review, item B6 "Ctrl+D duplicate", generalized for item A13 "multi-select
+// bulk operations") — clones one or more Measurements offset by (dx, dy), re-validated through
+// the same create() gate as any new shape, deliberately dropping parentId (a duplicate is never
+// part of the source's Split group, INV-4) and vertexLabels (index-aligned to a shape the copy no
+// longer shares editing history with). A single-id array is exactly the original Ctrl+D behavior.
+describe('DuplicateMeasurements — command round trip', () => {
+  it('single id: create → undo → exact initial → redo → exact mutated', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+    const cmd = duplicateMeasurementsCommand({
+      surface: initial,
+      measurementIds: ['m1'],
+      newMeasurementIds: ['m1-copy'],
+      dx: 5,
+      dy: 3,
+    });
+
+    const mutated = stack.execute(cmd);
+    expect(mutated.layers[0]!.measurements).toHaveLength(2);
+    const copy = findMeasurement(mutated, 'm1-copy')!.measurement;
+    expect(copy.shape).toEqual({
+      type: 'polygon',
+      vertices: [{ x: 5, y: 3 }, { x: 15, y: 3 }, { x: 15, y: 13 }, { x: 5, y: 13 }],
+    });
+    expect(copy.identity).toEqual({ name: 'Square copy', color: '#2E7D32' });
+    expect(copy.provenance).toBe('Manual');
+    expect(copy.locked).toBe(false);
+    expect(copy.parentId).toBeUndefined();
+    // the original is untouched by producing a copy of it
+    expect(findMeasurement(mutated, 'm1')!.measurement).toEqual(makeSquareMeasurement('m1'));
+
+    const undone = stack.undo<Surface>();
+    expect(undone).toEqual(initial);
+
+    const redone = stack.redo<Surface>();
+    expect(redone).toEqual(mutated);
+  });
+
+  it('multiple ids: every copy lands in one atomic undo step', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1'), makeSquareMeasurement('m2', 20)]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(
+      duplicateMeasurementsCommand({
+        surface: initial,
+        measurementIds: ['m1', 'm2'],
+        newMeasurementIds: ['m1-copy', 'm2-copy'],
+        dx: 1,
+        dy: 1,
+      }),
+    );
+
+    expect(mutated.layers[0]!.measurements).toHaveLength(4);
+    expect(findMeasurement(mutated, 'm1-copy')).not.toBeNull();
+    expect(findMeasurement(mutated, 'm2-copy')).not.toBeNull();
+
+    // one Ctrl+Z undoes BOTH copies at once, not one at a time
+    expect(stack.undo<Surface>()).toEqual(initial);
+  });
+
+  it('drops parentId — a duplicate of a Split child is never part of that split group', () => {
+    const child: Measurement = { ...makeSquareMeasurement('child1'), parentId: 'parent1' };
+    const initial = makeTestSurface([child]);
+
+    const mutated = duplicateMeasurementsCommand({
+      surface: initial,
+      measurementIds: ['child1'],
+      newMeasurementIds: ['child1-copy'],
+      dx: 0,
+      dy: 0,
+    }).do();
+
+    expect(findMeasurement(mutated, 'child1-copy')!.measurement.parentId).toBeUndefined();
+  });
+
+  it('throws for a measurementId that does not exist on the Surface', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() =>
+      duplicateMeasurementsCommand({ surface: initial, measurementIds: ['missing'], newMeasurementIds: ['x'], dx: 0, dy: 0 }),
+    ).toThrow();
+  });
+
+  it('throws when measurementIds and newMeasurementIds lengths mismatch', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() =>
+      duplicateMeasurementsCommand({ surface: initial, measurementIds: ['m1'], newMeasurementIds: [], dx: 0, dy: 0 }),
+    ).toThrow();
+  });
+});
+
 describe('UpdateIdentity — single command round trip', () => {
   it('create → undo → exact initial → redo → exact mutated', () => {
     const initial = makeTestSurface([makeSquareMeasurement('m1')]);
@@ -71,6 +169,31 @@ describe('UpdateIdentity — single command round trip', () => {
 
     const redone = stack.redo<Surface>();
     expect(redone).toEqual(mutated);
+  });
+
+  it('hidden (item A5 visibility toggle) rides the same identity path, undoable', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+
+    const hidden = stack.execute(
+      updateIdentityCommand({
+        surface: initial,
+        measurementId: 'm1',
+        identity: { ...findMeasurement(initial, 'm1')!.measurement.identity, hidden: true },
+      }),
+    );
+    expect(findMeasurement(hidden, 'm1')!.measurement.identity.hidden).toBe(true);
+    // a later rename must not silently resurrect visibility — the identity spread carries it
+    const renamed = new CommandStack().execute(
+      updateIdentityCommand({
+        surface: hidden,
+        measurementId: 'm1',
+        identity: { ...findMeasurement(hidden, 'm1')!.measurement.identity, name: 'Renamed' },
+      }),
+    );
+    expect(findMeasurement(renamed, 'm1')!.measurement.identity.hidden).toBe(true);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
   });
 });
 
@@ -253,7 +376,7 @@ describe('CommitGhost — undo/redo, and the "same create path" invariant (PD-01
   });
 });
 
-describe('DeleteMeasurement — parent/child cascade (11 §4)', () => {
+describe('DeleteMeasurements — parent/child cascade (11 §4)', () => {
   it('deleting a split parent cascades to both children in one undoable action', () => {
     const parent = makeSquareMeasurement('parent');
     const childA = { ...makeSquareMeasurement('childA'), parentId: 'parent' };
@@ -261,7 +384,7 @@ describe('DeleteMeasurement — parent/child cascade (11 §4)', () => {
     const initial = makeTestSurface([parent, childA, childB]);
     const stack = new CommandStack();
 
-    const mutated = stack.execute(deleteMeasurementCommand({ surface: initial, measurementId: 'parent' }));
+    const mutated = stack.execute(deleteMeasurementsCommand({ surface: initial, measurementIds: ['parent'] }));
     expect(mutated.layers[0]!.measurements).toHaveLength(0); // parent AND both children gone
 
     expect(stack.undo<Surface>()).toEqual(initial);
@@ -275,7 +398,7 @@ describe('DeleteMeasurement — parent/child cascade (11 §4)', () => {
     const initial = makeTestSurface([parent, childA, childB]);
     const stack = new CommandStack();
 
-    const mutated = stack.execute(deleteMeasurementCommand({ surface: initial, measurementId: 'childA' }));
+    const mutated = stack.execute(deleteMeasurementsCommand({ surface: initial, measurementIds: ['childA'] }));
     const remaining = mutated.layers[0]!.measurements;
     expect(remaining.map((m) => m.id).sort()).toEqual(['childB', 'parent']);
     const survivingSibling = remaining.find((m) => m.id === 'childB')!;
@@ -284,6 +407,48 @@ describe('DeleteMeasurement — parent/child cascade (11 §4)', () => {
     expect(survivingParent).toEqual(parent); // untouched
 
     expect(stack.undo<Surface>()).toEqual(initial);
+  });
+});
+
+// PO follow-up (UX review, item A13 "multi-select bulk operations") — the array param above is
+// exactly what a Delete keypress with several Measurements selected passes; these tests exercise
+// the genuinely multi-id paths (plain batch, and a batch that includes a split parent AND one of
+// its own children, which must not double-remove or throw on the already-cascaded child).
+describe('DeleteMeasurements — genuinely multi-id batches', () => {
+  it('deletes an unrelated batch of plain measurements in one atomic undo step', () => {
+    const a = makeSquareMeasurement('a');
+    const b = makeSquareMeasurement('b', 20);
+    const c = makeSquareMeasurement('c', 40);
+    const initial = makeTestSurface([a, b, c]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(deleteMeasurementsCommand({ surface: initial, measurementIds: ['a', 'c'] }));
+    expect(mutated.layers[0]!.measurements.map((m) => m.id)).toEqual(['b']);
+
+    expect(stack.undo<Surface>()).toEqual(initial); // one Ctrl+Z restores BOTH
+  });
+
+  it('a batch containing a split parent AND one of its own children removes everything exactly once', () => {
+    const parent = makeSquareMeasurement('parent');
+    const childA = { ...makeSquareMeasurement('childA'), parentId: 'parent' };
+    const childB = { ...makeSquareMeasurement('childB', 20), parentId: 'parent' };
+    const initial = makeTestSurface([parent, childA, childB]);
+
+    // 'parent' is listed first, so its own cascade already removes 'childA' before the batch
+    // reaches 'childA' as its own listed id — must not throw "not found" or double-process it.
+    const mutated = deleteMeasurementsCommand({ surface: initial, measurementIds: ['parent', 'childA'] }).do();
+    expect(mutated.layers[0]!.measurements).toHaveLength(0);
+  });
+
+  it('ignores a duplicated id in the batch rather than throwing on its second occurrence', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const mutated = deleteMeasurementsCommand({ surface: initial, measurementIds: ['m1', 'm1'] }).do();
+    expect(mutated.layers[0]!.measurements).toHaveLength(0);
+  });
+
+  it('throws for a measurementId that does not exist on the Surface', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() => deleteMeasurementsCommand({ surface: initial, measurementIds: ['missing'] })).toThrow();
   });
 });
 
@@ -335,6 +500,219 @@ describe('ReorderMeasurements — Layers panel drag-to-reorder round trip', () =
     );
     expect(mutated.layers[0]!.measurements.map((m) => m.id)).toEqual(['b', 'a']);
     expect(mutated.layers[1]!.measurements.map((m) => m.id)).toEqual(['c']);
+  });
+});
+
+describe('ResizeImage — round trip', () => {
+  it('sets imageRect; undo/redo exact', () => {
+    const initial = { ...makeTestSurface([]), kind: 'image' as const };
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(
+      resizeImageCommand({ surface: initial, origin: { x: 10, y: 20 }, width: 300, height: 150 }),
+    );
+    expect(mutated.imageRect).toEqual({ origin: { x: 10, y: 20 }, width: 300, height: 150 });
+    expect(initial.imageRect).toBeUndefined(); // undo target untouched
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('rejects a non-positive width/height and leaves the Surface untouched', () => {
+    const initial = { ...makeTestSurface([]), kind: 'image' as const };
+    const stack = new CommandStack();
+
+    expect(() =>
+      stack.execute(resizeImageCommand({ surface: initial, origin: { x: 0, y: 0 }, width: 0, height: 50 })),
+    ).toThrow();
+    expect(stack.canUndo()).toBe(false);
+  });
+});
+
+describe('SetImageLocked — round trip', () => {
+  it('sets imageLocked; undo/redo exact', () => {
+    const initial = { ...makeTestSurface([]), kind: 'image' as const };
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setImageLockedCommand({ surface: initial, locked: false }));
+    expect(mutated.imageLocked).toBe(false);
+    expect(initial.imageLocked).toBeUndefined();
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+});
+
+describe('SetVertexLabel — round trip', () => {
+  it('sets a label at an index; undo/redo exact', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(
+      setVertexLabelCommand({ surface: initial, measurementId: 'm1', vertexIndex: 2, label: { text: 'A', color: '#1565C0' } }),
+    );
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([null, null, { text: 'A', color: '#1565C0' }]);
+    expect(findMeasurement(initial, 'm1')!.measurement.vertexLabels).toBeUndefined();
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('clearing a label (label: null) trims a trailing gap back to undefined', () => {
+    const withLabel = { ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0' }] };
+    const initial = makeTestSurface([withLabel]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setVertexLabelCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, label: null }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toBeUndefined();
+  });
+});
+
+describe('ResizeRectangleDimensions — round trip', () => {
+  const rectMeasurement: Measurement = {
+    id: 'm1',
+    shape: { type: 'rectangle', origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 },
+    identity: { name: 'Rect', color: '#2E7D32' },
+    provenance: 'Manual',
+    locked: false,
+  };
+
+  it('sets an exact width/height, keeping the origin fixed; undo/redo exact', () => {
+    const initial = makeTestSurface([rectMeasurement]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(resizeRectangleDimensionsCommand({ surface: initial, measurementId: 'm1', width: 120, height: 60 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.shape).toEqual({
+      type: 'rectangle',
+      origin: { x: 0, y: 0 },
+      width: 120,
+      height: 60,
+      rotation: 0,
+    });
+    expect(findMeasurement(initial, 'm1')!.measurement.shape).toEqual(rectMeasurement.shape);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('throws for a non-positive width/height — command never pushed', () => {
+    const initial = makeTestSurface([rectMeasurement]);
+    expect(() => resizeRectangleDimensionsCommand({ surface: initial, measurementId: 'm1', width: 0, height: 60 }).do()).toThrow();
+  });
+
+  it('throws for a measurement that is not a rectangle', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() => resizeRectangleDimensionsCommand({ surface: initial, measurementId: 'm1', width: 10, height: 10 })).toThrow();
+  });
+});
+
+describe('ResizeCircleToRadius — round trip', () => {
+  const circleMeasurement: Measurement = {
+    id: 'm1',
+    shape: { type: 'circle', center: { x: 50, y: 50 }, radius: 20 },
+    identity: { name: 'Circle', color: '#1565C0' },
+    provenance: 'Manual',
+    locked: false,
+  };
+
+  it('sets an exact radius, keeping the center fixed; undo/redo exact', () => {
+    const initial = makeTestSurface([circleMeasurement]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(resizeCircleToRadiusCommand({ surface: initial, measurementId: 'm1', radius: 35 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.shape).toEqual({ type: 'circle', center: { x: 50, y: 50 }, radius: 35 });
+    expect(findMeasurement(initial, 'm1')!.measurement.shape).toEqual(circleMeasurement.shape);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('throws for a non-positive radius — command never pushed', () => {
+    const initial = makeTestSurface([circleMeasurement]);
+    expect(() => resizeCircleToRadiusCommand({ surface: initial, measurementId: 'm1', radius: 0 }).do()).toThrow();
+  });
+
+  it('throws for a measurement that is not a circle', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() => resizeCircleToRadiusCommand({ surface: initial, measurementId: 'm1', radius: 10 })).toThrow();
+  });
+});
+
+describe('SetMeasurementLocked — round trip', () => {
+  it('locks a measurement; undo/redo exact', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setMeasurementLockedCommand({ surface: initial, measurementId: 'm1', locked: true }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.locked).toBe(true);
+    expect(findMeasurement(initial, 'm1')!.measurement.locked).toBe(false);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('throws for a measurement that does not exist', () => {
+    const initial = makeTestSurface([]);
+    expect(() => setMeasurementLockedCommand({ surface: initial, measurementId: 'missing', locked: true })).toThrow();
+  });
+});
+
+describe('AddVertex — shifts existing vertex labels to stay attached to the same vertex', () => {
+  it('a label at/after the insertion point shifts up by one; the new vertex is unlabeled', () => {
+    const square = {
+      ...makeSquareMeasurement('m1'),
+      vertexLabels: [{ text: 'A', color: '#1565C0' }, { text: 'B', color: '#E65100' }],
+    };
+    const initial = makeTestSurface([square]);
+    const stack = new CommandStack();
+
+    // makeSquareMeasurement's polygon is (0,0)-(10,0)-(10,10)-(0,10); insert on edge 0 (between
+    // vertex 0 and 1) at the edge's midpoint.
+    const mutated = stack.execute(
+      addVertexCommand({ surface: initial, measurementId: 'm1', edgeIndex: 0, position: { x: 5, y: 0 } }),
+    );
+    // new vertex lands at index 1 -> old index-1 label ('B') shifts to index 2; index-0 ('A') untouched.
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([
+      { text: 'A', color: '#1565C0' },
+      null,
+      { text: 'B', color: '#E65100' },
+    ]);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+  });
+});
+
+describe('RemoveVertex — discards the removed vertex\'s label and shifts the rest down', () => {
+  it('removing a labeled vertex drops its label; later labels shift down', () => {
+    const pentagon = {
+      id: 'm1',
+      shape: {
+        type: 'polygon' as const,
+        vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 5, y: 15 }, { x: 0, y: 10 }],
+      },
+      identity: { name: 'Pentagon', color: '#2E7D32' },
+      provenance: 'Manual' as const,
+      locked: false,
+      vertexLabels: [
+        { text: 'A', color: '#1565C0' },
+        { text: 'B', color: '#E65100' },
+        { text: 'C', color: '#6A1B9A' },
+        null,
+        { text: 'E', color: '#00838F' },
+      ],
+    };
+    const initial = makeTestSurface([pentagon]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(removeVertexCommand({ surface: initial, measurementId: 'm1', vertexIndex: 1 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([
+      { text: 'A', color: '#1565C0' },
+      { text: 'C', color: '#6A1B9A' },
+      null,
+      { text: 'E', color: '#00838F' },
+    ]);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
   });
 });
 
