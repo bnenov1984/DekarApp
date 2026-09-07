@@ -195,6 +195,27 @@ export function resizeCircleRadius(shape: CircleShape, newEdgePosition: Point): 
   return { ...shape, radius };
 }
 
+/** Numeric-input counterpart to `resizeRectangleCorner` — sets an exact width/height (in the same
+ * Surface-space px the shape's own fields are in) instead of a dragged pointer position, keeping
+ * the origin corner (and rotation) fixed. Synthesizes the corner-2 world position `resizeRectangleCorner`
+ * would see if the user dragged that corner to (width, height) in the rectangle's local frame, and
+ * defers to it for the actual math (and its "width/height must be positive" validation) — a single
+ * source of truth for the rotation-aware local→world transform. */
+export function resizeRectangleDimensions(shape: RectangleShape, width: number, height: number): RectangleShape {
+  const { origin, rotation } = shape;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const newPosition: Point = { x: origin.x + width * cos - height * sin, y: origin.y + width * sin + height * cos };
+  return resizeRectangleCorner(shape, 2, newPosition);
+}
+
+/** Numeric-input counterpart to `resizeCircleRadius` — sets an exact radius directly instead of a
+ * dragged edge position. Synthesizes the edge position `resizeCircleRadius` would see for that
+ * radius and defers to it (its "radius must be positive" validation included). */
+export function resizeCircleToRadius(shape: CircleShape, radius: number): CircleShape {
+  return resizeCircleRadius(shape, { x: shape.center.x + radius, y: shape.center.y });
+}
+
 /** Translates any Shape by a rigid (dx, dy) offset — a rigid transform can never create a
  * self-intersection or invalidate any other shape invariant, so unlike every other mutation in
  * this file, this never throws. Applies uniformly to all six Shape variants (18 §6 whole-shape
