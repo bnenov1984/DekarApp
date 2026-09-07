@@ -72,6 +72,33 @@ describe('compute — linear calibration (Image/PDF, 17 §7)', () => {
       expect(a).toBeCloseTo(Math.PI / 2, 8);
     }
   });
+
+  // PO request (expanded unit system) — mm/cm/in weren't reachable Unit values until now.
+  it('converts to mm2 correctly, and its perimeter to the paired mm length unit', () => {
+    const values = compute(square, calibration, 'mm2');
+    expect(values.unit).toBe('mm2');
+    expect(values.area).toBeCloseTo(100_000_000, 0); // 100 m² = 1e8 mm²
+    expect(values.perimeter).toBeCloseTo(40_000, 0); // 40 m = 40000 mm
+  });
+
+  it('converts to cm2 correctly, and its perimeter to the paired cm length unit', () => {
+    const values = compute(square, calibration, 'cm2');
+    expect(values.unit).toBe('cm2');
+    expect(values.area).toBeCloseTo(1_000_000, 0); // 100 m² = 1e6 cm²
+    expect(values.perimeter).toBeCloseTo(4_000, 0); // 40 m = 4000 cm
+  });
+
+  it('converts to in2 correctly, and its perimeter to the paired inch length unit', () => {
+    const values = compute(square, calibration, 'in2');
+    expect(values.unit).toBe('in2');
+    expect(values.area).toBeCloseTo(155_000.31, 0); // 100 m² ≈ 155000.31 in²
+  });
+
+  it('a plain length request (Line, not an area shape) converts via the same paired-unit path', () => {
+    const line: LineShape = { type: 'line', from: { x: 0, y: 0 }, to: { x: 30, y: 40 } }; // 50px = 5m
+    const values = compute(line, calibration, 'mm2'); // area-paired unit, even though Line has no area
+    expect(values.length).toBeCloseTo(5000, 0); // 5 m = 5000 mm
+  });
 });
 
 describe('compute — INV-2 (14 §4): pure function, same input -> same output', () => {

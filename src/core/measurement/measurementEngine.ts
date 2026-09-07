@@ -197,9 +197,15 @@ function computePlanar(shape: Shape): MeasurementValues {
 
 function convertFromBaseUnit(values: MeasurementValues, toUnit: Unit): MeasurementValues {
   if (toUnit === 'px') return values; // px-mode values are never converted
+  // `unit` must reflect the unit the numeric fields actually end up in, not just echo `toUnit`
+  // verbatim — a length-only Shape (Line) never gets an `area` field, so it's never actually in
+  // the *area* unit `toUnit` names; it's in that unit's paired length unit (lengthUnitFor). Fixed
+  // alongside the mm/cm/in addition since it was already a latent bug for ft2 (a Line measured
+  // with toUnit='ft2' previously reported `unit: 'ft2'` while `length` was in feet).
+  const unit = values.area !== undefined ? toUnit : lengthUnitFor(toUnit);
   return {
     ...values,
-    unit: toUnit,
+    unit,
     ...(values.area !== undefined && { area: convertAreaFromMeters(values.area, toUnit) }),
     ...(values.perimeter !== undefined && {
       perimeter: convertLengthFromMeters(values.perimeter, lengthUnitFor(toUnit)),
@@ -220,9 +226,16 @@ function convertFromBaseUnit(values: MeasurementValues, toUnit: Unit): Measureme
 }
 
 /** An area unit request (e.g. 'ha') still needs a *length* unit for perimeter/segments — this
- * maps each area unit to its natural linear counterpart ('m' for m²/ha/acre, 'ft' for ft²). */
-function lengthUnitFor(unit: Unit): Unit {
-  if (unit === 'ft2') return 'ft';
-  if (unit === 'ft') return 'ft';
+ * maps each area unit to its natural linear counterpart (PO request, expanded unit system: mm²→mm,
+ * cm²→cm, in²→in, ft²→ft; m²/ha/acre and every plain length unit otherwise fall through to 'm'/
+ * itself). A pure length unit passported straight through (e.g. 'mm2' isn't literally 'mm', but
+ * 'mm' itself maps to 'mm' via the final `return unit` — this function is only ever *called* with
+ * whatever `toUnit` `compute()` received, area or length alike). */
+export function lengthUnitFor(unit: Unit): Unit {
+  if (unit === 'mm2') return 'mm';
+  if (unit === 'cm2') return 'cm';
+  if (unit === 'in2') return 'in';
+  if (unit === 'ft2' || unit === 'ft') return 'ft';
+  if (unit === 'mm' || unit === 'cm' || unit === 'in') return unit;
   return 'm';
 }
