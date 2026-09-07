@@ -4,6 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
+    // @types/node is a devDependency (pdGuardrails.test.ts's node:fs scan) — "types": []
+    // suppresses its automatic global-scope inclusion (Node's ambient setTimeout/Buffer/etc.
+    // would otherwise silently shadow DOM's across the whole browser-targeted src/ tree).
+    // Explicit `import ... from 'node:fs'`-style imports still resolve typed regardless, since
+    // that's module resolution, not the global-ambient mechanism this option controls.
+    "types": [],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
