@@ -9,11 +9,19 @@ import { StorageQuotaExceededError } from '../errors.js';
 // not a fit for storageAdapter's mixed-ops contract.
 
 const DEFAULT_DB_NAME = 'areaflow';
-const DB_VERSION = 1;
+// PO request (unit preference persistence) — bumped 1 -> 2 to add SETTINGS_STORE. Explicit,
+// documented migration (not a silent reinterpretation of old data): `onupgradeneeded` only ever
+// *adds* a missing store, so every existing PROJECTS_STORE/SURFACES_STORE/BLOBS_STORE record for
+// a user upgrading from v1 is left completely untouched — existing saved projects keep loading
+// exactly as before. A first read of the new store legitimately finds nothing (see
+// IndexedDbSettingsRepository.get()'s `?? DEFAULT_APP_SETTINGS` fallback) — that's the expected
+// post-migration state, not a data-loss bug.
+const DB_VERSION = 2;
 
 export const PROJECTS_STORE = 'projects';
 export const SURFACES_STORE = 'surfaces';
 export const BLOBS_STORE = 'blobs';
+export const SETTINGS_STORE = 'settings';
 
 export function openDatabase(dbName: string = DEFAULT_DB_NAME): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -23,6 +31,7 @@ export function openDatabase(dbName: string = DEFAULT_DB_NAME): Promise<IDBDatab
       if (!db.objectStoreNames.contains(PROJECTS_STORE)) db.createObjectStore(PROJECTS_STORE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(SURFACES_STORE)) db.createObjectStore(SURFACES_STORE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(BLOBS_STORE)) db.createObjectStore(BLOBS_STORE);
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) db.createObjectStore(SETTINGS_STORE);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -49,10 +58,14 @@ export function getAllRecords<T>(db: IDBDatabase, storeName: string): Promise<T[
   });
 }
 
-export function putRecord(db: IDBDatabase, storeName: string, value: unknown): Promise<void> {
+/** `key` is only needed for a no-keyPath store (SETTINGS_STORE/BLOBS_STORE convention) — omitted
+ * for PROJECTS_STORE/SURFACES_STORE, whose records carry their own `id` keyPath. */
+export function putRecord(db: IDBDatabase, storeName: string, value: unknown, key?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite');
-    tx.objectStore(storeName).put(value);
+    const store = tx.objectStore(storeName);
+    if (key !== undefined) store.put(value, key);
+    else store.put(value);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(isQuotaError(tx.error) ? new StorageQuotaExceededError() : tx.error);
   });
