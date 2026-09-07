@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { addVertex, create, editVertex, removeVertex, resizeRectangleCorner, resizeCircleRadius, translateShape } from './drawingEngine.js';
+import {
+  addVertex,
+  create,
+  editVertex,
+  removeVertex,
+  resizeRectangleCorner,
+  resizeRectangleDimensions,
+  resizeCircleRadius,
+  resizeCircleToRadius,
+  translateShape,
+} from './drawingEngine.js';
 import type { CircleShape, LineShape, PolygonShape, RectangleShape } from '../domain/types.js';
 
 describe('create', () => {
@@ -164,6 +174,60 @@ describe('resizeCircleRadius', () => {
 
   it('throws for a zero-radius result (drag position == center)', () => {
     expect(() => resizeCircleRadius(circle, { x: 100, y: 100 })).toThrow();
+  });
+});
+
+describe('resizeRectangleDimensions — numeric-input counterpart to resizeRectangleCorner', () => {
+  const rect: RectangleShape = { type: 'rectangle', origin: { x: 10, y: 20 }, width: 100, height: 50, rotation: 0 };
+
+  it('sets an exact width/height, keeping the origin corner fixed', () => {
+    const resized = resizeRectangleDimensions(rect, 120, 60);
+    expect(resized).toEqual({ type: 'rectangle', origin: { x: 10, y: 20 }, width: 120, height: 60, rotation: 0 });
+  });
+
+  it('accounts for rotation — origin stays fixed in world space even when rotated', () => {
+    const rotated: RectangleShape = { type: 'rectangle', origin: { x: 5, y: 5 }, width: 10, height: 10, rotation: Math.PI / 2 };
+    const resized = resizeRectangleDimensions(rotated, 20, 30);
+    expect(resized.origin).toEqual(rotated.origin);
+    expect(resized.width).toBeCloseTo(20, 8);
+    expect(resized.height).toBeCloseTo(30, 8);
+    expect(resized.rotation).toBe(rotated.rotation);
+  });
+
+  it('throws for a zero width or height (collapses onto the origin corner)', () => {
+    expect(() => resizeRectangleDimensions(rect, 0, 60)).toThrow();
+    expect(() => resizeRectangleDimensions(rect, 120, 0)).toThrow();
+  });
+
+  // A negative dimension doesn't throw — it's interpreted the same way resizeRectangleCorner treats
+  // a corner dragged past its opposite corner (min/max-based flip to the other side, still a valid
+  // rectangle). Rejecting negative *typed text* outright is the caller's job (PropertyPanel's
+  // parseDimensionToPx, computeDisplay.ts) — this function only guards the structural precondition
+  // (a non-degenerate result), same contract as resizeRectangleCorner.
+  it('a negative dimension flips the rectangle to the other side instead of throwing', () => {
+    const resized = resizeRectangleDimensions(rect, 120, -5);
+    expect(resized).toEqual({ type: 'rectangle', origin: { x: 10, y: 15 }, width: 120, height: 5, rotation: 0 });
+  });
+});
+
+describe('resizeCircleToRadius — numeric-input counterpart to resizeCircleRadius', () => {
+  const circle: CircleShape = { type: 'circle', center: { x: 100, y: 100 }, radius: 50 };
+
+  it('sets the radius directly, keeping the center fixed', () => {
+    const resized = resizeCircleToRadius(circle, 80);
+    expect(resized).toEqual({ type: 'circle', center: { x: 100, y: 100 }, radius: 80 });
+  });
+
+  it('throws for a zero radius', () => {
+    expect(() => resizeCircleToRadius(circle, 0)).toThrow();
+  });
+
+  // A negative radius doesn't throw — resizeCircleRadius measures a distance, which is always
+  // non-negative, so it's silently treated as the absolute value. Rejecting negative *typed text*
+  // outright is the caller's job (PropertyPanel's parseDimensionToPx, computeDisplay.ts).
+  it('a negative radius is treated as its absolute value instead of throwing', () => {
+    const resized = resizeCircleToRadius(circle, -10);
+    expect(resized).toEqual({ type: 'circle', center: { x: 100, y: 100 }, radius: 10 });
   });
 });
 

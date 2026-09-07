@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hitTestShape, findVertexAt, findEdgeAt, findRectangleCornerAt, isNearCircleHandle } from './hitTest.js';
+import { hitTestShape, findVertexAt, findEdgeAt, findRectangleCornerAt, isNearCircleHandle, findHandleIndexAt } from './hitTest.js';
 import type { CircleShape, LineShape, PolygonShape, RectangleShape } from '../domain/types.js';
 
 const square: PolygonShape = {
@@ -168,5 +168,29 @@ describe('isNearCircleHandle', () => {
 
   it('is false at the center', () => {
     expect(isNearCircleHandle({ x: 100, y: 100 }, circle, 1)).toBe(false);
+  });
+});
+
+describe('findHandleIndexAt', () => {
+  it('delegates to findVertexAt for Polygon/Curve/Freehand', () => {
+    const square = { type: 'polygon' as const, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] };
+    expect(findHandleIndexAt({ x: 10, y: 10 }, square, 1)).toBe(2);
+    expect(findHandleIndexAt({ x: 5, y: 5 }, square, 1)).toBeNull(); // center — no vertex nearby
+  });
+
+  it('delegates to findRectangleCornerAt for Rectangle', () => {
+    const rect = { type: 'rectangle' as const, origin: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 };
+    expect(findHandleIndexAt({ x: 100, y: 50 }, rect, 1)).toBe(2);
+  });
+
+  it('returns 0 for a Circle handle hit, null otherwise', () => {
+    const circle: CircleShape = { type: 'circle', center: { x: 100, y: 100 }, radius: 50 };
+    expect(findHandleIndexAt({ x: 150, y: 100 }, circle, 1)).toBe(0);
+    expect(findHandleIndexAt({ x: 100, y: 150 }, circle, 1)).toBeNull();
+  });
+
+  it('is always null for Line — no handles exist for it', () => {
+    const line = { type: 'line' as const, from: { x: 0, y: 0 }, to: { x: 10, y: 0 } };
+    expect(findHandleIndexAt({ x: 0, y: 0 }, line, 1)).toBeNull();
   });
 });
