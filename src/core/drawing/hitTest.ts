@@ -8,7 +8,9 @@ import type { RectangleCorner } from './drawingEngine.js';
 // (testable in isolation, no UI/rendering dependency). UI (CanvasStage) only supplies a cursor
 // Point already converted to Surface space and a tolerance in Surface units.
 
-function pointInPolygon(point: Point, vertices: readonly Point[]): boolean {
+/** PO request (draggable polygon labels) — exported so `labelDragSession.ts` can constrain a
+ * dragged label to stay inside its own polygon; the ray-casting test itself is unchanged. */
+export function pointInPolygon(point: Point, vertices: readonly Point[]): boolean {
   // standard ray-casting (even-odd rule)
   let inside = false;
   const n = vertices.length;
@@ -146,4 +148,24 @@ export function findRectangleCornerAt(point: Point, shape: RectangleShape, toler
 export function isNearCircleHandle(point: Point, shape: CircleShape, tolerance: number): boolean {
   const handle = { x: shape.center.x + shape.radius, y: shape.center.y };
   return distance(point, handle) <= tolerance;
+}
+
+/** PO request (per-vertex annotation) — the one hit-test every handle-bearing Shape type needs,
+ * returning the same index convention `Measurement.vertexLabels` (entities.ts) and
+ * `sceneRenderer.ts`'s `resizeHandlePoints` use: vertex index for Polygon/Curve/Freehand, corner
+ * 0-3 for Rectangle, always 0 (the single radius handle) for Circle. `null` for Line (no handles
+ * at all, same "not requested" scope line as its missing resize handle) or a miss. */
+export function findHandleIndexAt(point: Point, shape: Shape, tolerance: number): number | null {
+  switch (shape.type) {
+    case 'polygon':
+    case 'curve':
+    case 'freehand':
+      return findVertexAt(point, shape, tolerance);
+    case 'rectangle':
+      return findRectangleCornerAt(point, shape, tolerance);
+    case 'circle':
+      return isNearCircleHandle(point, shape, tolerance) ? 0 : null;
+    case 'line':
+      return null;
+  }
 }

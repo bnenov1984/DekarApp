@@ -2,6 +2,7 @@ import type { Command } from '../commandStack.js';
 import type { MeasurementId, Surface } from '../../core/domain/entities.js';
 import { removeVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
+import { removeLabelAt, withVertexLabels } from '../vertexLabels.js';
 
 export interface RemoveVertexParams {
   readonly surface: Surface;
@@ -29,7 +30,12 @@ export function removeVertexCommand(params: RemoveVertexParams): Command<Surface
     do: () => {
       const result = removeVertex(found.measurement.shape, params.vertexIndex);
       if (!result.ok) throw new Error(`removeVertexCommand: ${result.reason}`);
-      return replaceMeasurement(before, params.measurementId, { ...found.measurement, shape: result.value });
+      // PO request (per-vertex annotation, entities.ts): the removed vertex's label (if any) is
+      // discarded along with it, and every label after it shifts down to stay attached to the
+      // same vertex it was labeling.
+      const vertexLabels = removeLabelAt(found.measurement.vertexLabels, params.vertexIndex);
+      const updated = withVertexLabels({ ...found.measurement, shape: result.value }, vertexLabels);
+      return replaceMeasurement(before, params.measurementId, updated);
     },
     undo: () => before,
     event: { type: 'MeasurementShapeEdited', surfaceId: before.id, measurementId: params.measurementId },
