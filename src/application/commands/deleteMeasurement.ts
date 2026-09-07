@@ -2,41 +2,63 @@ import type { Command } from '../commandStack.js';
 import type { MeasurementId, Surface } from '../../core/domain/entities.js';
 import { childrenOf, dissolveSplitGroup, findMeasurement, removeMeasurements } from '../surfaceOps.js';
 
-export interface DeleteMeasurementParams {
+export interface DeleteMeasurementsParams {
   readonly surface: Surface;
-  readonly measurementId: MeasurementId;
+  readonly measurementIds: readonly MeasurementId[];
 }
 
 /**
- * 11 §4 lifecycle rules for Measurement deletion:
+ * 11 §4 lifecycle rules for Measurement deletion, generalized to a batch (item A13 "multi-select
+ * bulk operations") — a single-element `measurementIds` is exactly the original single-delete
+ * behavior; this is the same command either way, so a multi-select Delete is one atomic undo step
+ * covering the whole batch, not N separate ones:
  *  - a split PARENT (has children referencing it) is deleted together with all its children,
  *    as one undoable action — an orphaned child pointing at a deleted parentId would break
  *    referential integrity, so this cannot be split into separate commands.
  *  - a split CHILD dissolves the group for its siblings (they lose parentId, becoming ordinary
  *    measurements) but the parent measurement itself is left untouched.
  *  - a plain (non-split) measurement is simply removed.
+ *
+ * Ids are processed in order against the *evolving* result of prior ids in the same batch (not
+ * all against the original `surface`) — e.g. selecting both a split parent and one of its own
+ * children and deleting them together must not double-remove or throw on the child, since the
+ * parent's own cascade already took it. `removedSoFar` tracks exactly that.
  */
-export function deleteMeasurementCommand(params: DeleteMeasurementParams): Command<Surface> {
+export function deleteMeasurementsCommand(params: DeleteMeasurementsParams): Command<Surface> {
   const before = params.surface;
-  const found = findMeasurement(before, params.measurementId);
-  if (!found) throw new Error(`deleteMeasurementCommand: measurement '${params.measurementId}' not found`);
-  const { measurement } = found;
+  // dedupe defensively — a caller passing the same id twice (a stale/duplicated selection) should
+  // never be treated as "already removed, not found" on its second occurrence.
+  const ids = [...new Set(params.measurementIds)];
+  for (const id of ids) {
+    if (!findMeasurement(before, id)) throw new Error(`deleteMeasurementsCommand: measurement '${id}' not found`);
+  }
 
   return {
     target: before.id,
-    label: 'DeleteMeasurement',
+    label: 'DeleteMeasurements',
     do: () => {
-      const children = childrenOf(before, measurement.id);
-      if (children.length > 0) {
-        return removeMeasurements(before, [measurement.id, ...children.map((c) => c.id)]);
+      let surface = before;
+      const removedSoFar = new Set<MeasurementId>();
+      for (const id of ids) {
+        if (removedSoFar.has(id)) continue; // already gone via an earlier id's own cascade in this batch
+        const found = findMeasurement(surface, id);
+        if (!found) continue; // same reason
+        const { measurement } = found;
+        const children = childrenOf(surface, measurement.id);
+        if (children.length > 0) {
+          surface = removeMeasurements(surface, [measurement.id, ...children.map((c) => c.id)]);
+          removedSoFar.add(measurement.id);
+          for (const c of children) removedSoFar.add(c.id);
+        } else if (measurement.parentId !== undefined) {
+          surface = removeMeasurements(dissolveSplitGroup(surface, measurement.parentId), [measurement.id]);
+          removedSoFar.add(measurement.id);
+        } else {
+          surface = removeMeasurements(surface, [measurement.id]);
+          removedSoFar.add(measurement.id);
+        }
       }
-      if (measurement.parentId !== undefined) {
-        const dissolved = dissolveSplitGroup(before, measurement.parentId);
-        return removeMeasurements(dissolved, [measurement.id]);
-      }
-      return removeMeasurements(before, [measurement.id]);
+      return surface;
     },
     undo: () => before,
-    event: { type: 'MeasurementDeleted', surfaceId: before.id, measurementId: measurement.id },
   };
 }
