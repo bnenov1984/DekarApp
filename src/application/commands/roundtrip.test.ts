@@ -21,6 +21,8 @@ import { addVertexCommand } from './addVertex.js';
 import { resizeRectangleDimensionsCommand } from './resizeRectangleDimensions.js';
 import { resizeCircleToRadiusCommand } from './resizeCircleToRadius.js';
 import { setMeasurementLockedCommand } from './setMeasurementLocked.js';
+import { setLabelOffsetCommand } from './setLabelOffset.js';
+import { setManualAreaCommand } from './setManualArea.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { findMeasurement } from '../surfaceOps.js';
 import type { Measurement, Surface } from '../../core/domain/entities.js';
@@ -752,6 +754,171 @@ describe('Failed command → stack не се замърсява (self-intersecti
     ).toThrow();
 
     expect(stack.undoDepth).toBe(depthBefore); // the failed command never entered the stack
+  });
+});
+
+describe('SetLabelOffset — round trip', () => {
+  it('sets a label offset; undo/redo exact', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setLabelOffsetCommand({ surface: initial, measurementId: 'm1', dx: 3, dy: -4 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.labelOffset).toEqual({ dx: 3, dy: -4 });
+    expect(findMeasurement(initial, 'm1')!.measurement.labelOffset).toBeUndefined();
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('overwrites a previous offset rather than accumulating it', () => {
+    const initial = makeTestSurface([{ ...makeSquareMeasurement('m1'), labelOffset: { dx: 1, dy: 1 } }]);
+    const mutated = setLabelOffsetCommand({ surface: initial, measurementId: 'm1', dx: 9, dy: 9 }).do();
+    expect(findMeasurement(mutated, 'm1')!.measurement.labelOffset).toEqual({ dx: 9, dy: 9 });
+  });
+
+  it('throws for a measurement that does not exist', () => {
+    const initial = makeTestSurface([]);
+    expect(() => setLabelOffsetCommand({ surface: initial, measurementId: 'missing', dx: 1, dy: 1 })).toThrow();
+  });
+});
+
+describe('SetManualArea — round trip', () => {
+  it('derives a squareMetersPerSquarePixel factor from the current geometric area; undo/redo exact', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]); // 10x10 square, 100 px²
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setManualAreaCommand({ surface: initial, measurementId: 'm1', manualAreaM2: 1200 }));
+    const manualArea = findMeasurement(mutated, 'm1')!.measurement.manualArea;
+    expect(manualArea).toBeDefined();
+    expect(manualArea!.squareMetersPerSquarePixel).toBeCloseTo(12, 8); // 1200 / 100px²
+    expect(findMeasurement(initial, 'm1')!.measurement.manualArea).toBeUndefined();
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('clearing with null removes the field entirely, not just sets it to undefined', () => {
+    const withManualArea = { ...makeSquareMeasurement('m1'), manualArea: { squareMetersPerSquarePixel: 12 } };
+    const initial = makeTestSurface([withManualArea]);
+    const mutated = setManualAreaCommand({ surface: initial, measurementId: 'm1', manualAreaM2: null }).do();
+    expect('manualArea' in findMeasurement(mutated, 'm1')!.measurement).toBe(false);
+  });
+
+  it('throws for a non-positive manualAreaM2', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    expect(() => setManualAreaCommand({ surface: initial, measurementId: 'm1', manualAreaM2: 0 })).toThrow();
+    expect(() => setManualAreaCommand({ surface: initial, measurementId: 'm1', manualAreaM2: -5 })).toThrow();
+  });
+
+  it('throws for a non-polygon measurement', () => {
+    const circle: Measurement = {
+      id: 'm1',
+      shape: { type: 'circle', center: { x: 0, y: 0 }, radius: 10 },
+      identity: { name: 'Circle', color: '#000' },
+      provenance: 'Manual',
+      locked: false,
+    };
+    const initial = makeTestSurface([circle]);
+    expect(() => setManualAreaCommand({ surface: initial, measurementId: 'm1', manualAreaM2: 100 })).toThrow();
+  });
+
+  it('throws for a measurement that does not exist', () => {
+    const initial = makeTestSurface([]);
+    expect(() => setManualAreaCommand({ surface: initial, measurementId: 'missing', manualAreaM2: 100 })).toThrow();
+  });
+});
+
+describe('SplitIntoParts — round trip', () => {
+  it('adds N children referencing the parent, parent untouched; undo/redo exact', () => {
+    const parent = makeSquareMeasurement('parent'); // 0..10 square
+    const initial = makeTestSurface([parent]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(
+      splitIntoPartsCommand({
+        surface: initial,
+        parentMeasurementId: 'parent',
+        childShapes: [
+          { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }, { x: 0, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 5, y: 10 }] },
+        ],
+        childIds: ['c1', 'c2'],
+      }),
+    );
+    const ids = mutated.layers[0]!.measurements.map((m) => m.id).sort();
+    expect(ids).toEqual(['c1', 'c2', 'parent']);
+    expect(findMeasurement(mutated, 'c1')!.measurement.parentId).toBe('parent');
+    expect(findMeasurement(mutated, 'c2')!.measurement.parentId).toBe('parent');
+    expect(findMeasurement(mutated, 'parent')!.measurement).toEqual(parent); // untouched, PD-009
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  it('inherits the parent manualArea scale factor onto every child', () => {
+    const parent = { ...makeSquareMeasurement('parent'), manualArea: { squareMetersPerSquarePixel: 12 } };
+    const initial = makeTestSurface([parent]);
+
+    const mutated = splitIntoPartsCommand({
+      surface: initial,
+      parentMeasurementId: 'parent',
+      childShapes: [
+        { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }, { x: 0, y: 10 }] },
+        { type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 5, y: 10 }] },
+      ],
+      childIds: ['c1', 'c2'],
+    }).do();
+    expect(findMeasurement(mutated, 'c1')!.measurement.manualArea).toEqual({ squareMetersPerSquarePixel: 12 });
+    expect(findMeasurement(mutated, 'c2')!.measurement.manualArea).toEqual({ squareMetersPerSquarePixel: 12 });
+  });
+
+  it('throws for fewer than 2 child shapes', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('parent')]);
+    expect(() =>
+      splitIntoPartsCommand({
+        surface: initial,
+        parentMeasurementId: 'parent',
+        childShapes: [{ type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
+        childIds: ['c1'],
+      }),
+    ).toThrow();
+  });
+
+  it('throws for a mismatched childShapes/childIds length', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('parent')]);
+    expect(() =>
+      splitIntoPartsCommand({
+        surface: initial,
+        parentMeasurementId: 'parent',
+        childShapes: [
+          { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] },
+        ],
+        childIds: ['c1'],
+      }),
+    ).toThrow();
+  });
+
+  it('throws for a non-polygon parent', () => {
+    const circle: Measurement = {
+      id: 'parent',
+      shape: { type: 'circle', center: { x: 0, y: 0 }, radius: 10 },
+      identity: { name: 'Circle', color: '#000' },
+      provenance: 'Manual',
+      locked: false,
+    };
+    const initial = makeTestSurface([circle]);
+    expect(() =>
+      splitIntoPartsCommand({
+        surface: initial,
+        parentMeasurementId: 'parent',
+        childShapes: [
+          { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] },
+        ],
+        childIds: ['c1', 'c2'],
+      }),
+    ).toThrow();
   });
 });
 
