@@ -16,16 +16,28 @@
     executeCommand,
     deleteSelectedMeasurement,
     setVertexLabel,
+    setManualArea,
   } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
   import { resizeRectangleDimensionsCommand } from '../../application/commands/resizeRectangleDimensions.js';
   import { resizeCircleToRadiusCommand } from '../../application/commands/resizeCircleToRadius.js';
   import { cancelDrag } from '../stores/vertexEditSession.js';
-  import { splittingId, startSplit } from '../stores/splitSession.js';
+  import {
+    splittingId,
+    startSplit,
+    splitConfigOpen,
+    splitPartsCount,
+    splitDistribution,
+    splitPartsError,
+    openSplitConfig,
+    closeSplitConfig,
+    confirmSplitParts,
+  } from '../stores/splitSession.js';
   import { activeVertexLabel, clearActiveVertexLabel } from '../stores/vertexLabelSession.js';
   import Icon from './Icon.svelte';
   import {
     computeMeasurementDisplay,
+    applyManualArea,
     dimensionUnitFor,
     formatAreaValue,
     formatDimensionDraft,
@@ -33,6 +45,7 @@
     parseDimensionToPx,
   } from '../measurement/computeDisplay.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
+  import { shoelaceArea } from '../../core/measurement/formulas.js';
   import type { MeasurementIdentity } from '../../core/domain/entities.js';
 
   const MEASUREMENT_COLORS = [
@@ -56,7 +69,27 @@
   // has resized it (still the "contain"-fit default before that, so nothing to show).
   $: imageLocked = $activeSurface?.imageLocked ?? true;
 
-  $: display = measurement ? computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, $displayUnit) : null;
+  // `baseDisplay` is the plain geometry/calibration-derived MeasurementValues, untouched by manual
+  // area — Perimeter (and any other non-area field) must always read its unit from here, never
+  // from the manual-area-applied `display` below: MeasurementValues carries one shared `unit` for
+  // every field (17 §2), and overriding it for a possibly-different area unit (manual area is
+  // always m²-referenced, independent of calibration) would otherwise mislabel Perimeter too.
+  $: baseDisplay = measurement ? computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, $displayUnit) : null;
+
+  // PO request (manual area) — the Values section's "Area" row (and every other reader of this
+  // `display`) shows the manual override, when set, instead of the geometry/calibration-derived
+  // value — "1200 m² is the known real-world reference area" should read as 1200 m² everywhere
+  // the area appears, not just in a separate, easy-to-miss field. Only ever used for the Area row
+  // itself (and the length-only primaryLabel fallback, which manual area never applies to,
+  // Polygon-only) — see `baseDisplay` above for Perimeter/other fields.
+  $: display = measurement && baseDisplay
+    ? applyManualArea(
+        baseDisplay,
+        measurement.manualArea,
+        measurement.shape.type === 'polygon' ? measurement.shape.vertices : undefined,
+        $displayUnit,
+      )
+    : null;
 
   // Local edit drafts, reset only when the *selected measurement* changes (not on every store
   // tick) — otherwise a keystroke would be clobbered by the reactive re-derivation above.
@@ -183,6 +216,45 @@
     );
   }
 
+  // PO request (manual area) — "Area (m²)" editable field, Polygon only. Always in m² (the field's
+  // own label/unit — independent of `$displayUnit`, matching "Area (m²)" as specified rather than
+  // following the display-unit toggle everywhere else). Same draft/resync convention as
+  // widthDraft/heightDraft/radiusDraft above: resynced whenever the *computed* m² value changes
+  // (a geometry edit, an undo/redo, a fresh selection) but never clobbered by an in-progress
+  // keystroke.
+  let manualAreaDraft = '';
+  let lastSyncedManualAreaM2: number | null = null;
+  $: manualAreaCurrentM2 =
+    measurement?.shape.type === 'polygon' && measurement.manualArea
+      ? shoelaceArea(measurement.shape.vertices) * measurement.manualArea.squareMetersPerSquarePixel
+      : null;
+  $: if (manualAreaCurrentM2 !== null && manualAreaCurrentM2 !== lastSyncedManualAreaM2) {
+    lastSyncedManualAreaM2 = manualAreaCurrentM2;
+    manualAreaDraft = formatDimensionDraft(manualAreaCurrentM2, 'm2');
+  }
+  $: if (manualAreaCurrentM2 === null) {
+    lastSyncedManualAreaM2 = null;
+    manualAreaDraft = '';
+  }
+
+  function commitManualArea(): void {
+    if (!measurement || measurement.shape.type !== 'polygon') return;
+    const trimmed = manualAreaDraft.trim();
+    if (trimmed === '') return; // use the "Auto" button to clear, not an emptied field
+    const value = Number(trimmed);
+    if (!Number.isFinite(value) || value <= 0) {
+      manualAreaDraft = manualAreaCurrentM2 !== null ? formatDimensionDraft(manualAreaCurrentM2, 'm2') : '';
+      return;
+    }
+    if (manualAreaCurrentM2 !== null && Math.abs(value - manualAreaCurrentM2) < 1e-9) return;
+    setManualArea(measurement.id, value);
+  }
+
+  function onClearManualArea(): void {
+    if (!measurement) return;
+    setManualArea(measurement.id, null);
+  }
+
   function commitRadius(): void {
     if (!measurement || measurement.shape.type !== 'circle' || !$activeSurface || !display) return;
     const currentRadius = display.values.radius!;
@@ -237,8 +309,21 @@
   // shortcut already applies (not already splitting something else); only shown at all for
   // Polygon (`startSplit`/`splitCommand` only support Polygon, 18 §5).
   $: canSplitSelected = measurement?.shape.type === 'polygon' && !measurement.locked && !$splittingId;
+  $: splitConfigOpenForThis = measurement !== undefined && $splitConfigOpen === measurement?.id;
 
+  // PO request ("Redesign and fix Split functionality") — the Split button now opens the inline
+  // Equal/Random config UI directly under it, instead of arming the old unlabeled line-draw mode
+  // straight away (that flow is retained, explicitly labeled "Manual split", one step further in).
   function onSplitClick(): void {
+    if (!measurement) return;
+    if ($splitConfigOpen === measurement.id) {
+      closeSplitConfig();
+    } else {
+      openSplitConfig(measurement.id);
+    }
+  }
+
+  function onManualSplitClick(): void {
     if (!measurement) return;
     startSplit(measurement.id);
   }
@@ -281,88 +366,197 @@
   }
 </script>
 
+<!-- PO request ("Keep the right Properties panel permanently visible") — this outer .panel div is
+     now the ONLY element gating the 236px column: it renders unconditionally regardless of
+     selection state, so Studio.svelte's flex row width (and therefore CanvasStage's container
+     size and, for image Surfaces, the background image's contain-fit rect) never changes when a
+     shape is selected/deselected — the panel's *contents* branch on selection state below, not
+     its own presence in the layout. -->
+<div class="panel" data-testid="property-panel">
 {#if measurement}
-  <div class="panel" data-testid="property-panel">
-    <div class="header-row">
-      <span class="header">Properties</span>
-      <div class="header-actions">
-        {#if measurement.shape.type === 'polygon'}
-          <button
-            type="button"
-            class="split-button"
-            title="Split (X)"
-            disabled={!canSplitSelected}
-            on:click={onSplitClick}
-            data-testid="split-measurement"
-          >
-            Split
-          </button>
-        {/if}
+  <div class="header-row">
+    <span class="header">Properties</span>
+    <div class="header-actions">
+      {#if measurement.shape.type === 'polygon'}
         <button
           type="button"
-          class="lock-button"
-          title={measurement.locked ? 'Unlock to move, resize, or delete' : 'Lock to prevent moving, resizing, or deleting'}
-          on:click={onToggleLocked}
-          data-testid="lock-measurement"
+          class="split-button"
+          class:active={splitConfigOpenForThis}
+          title="Split"
+          disabled={!canSplitSelected && !splitConfigOpenForThis}
+          on:click={onSplitClick}
+          data-testid="split-measurement"
         >
-          <Icon name={measurement.locked ? 'lock' : 'unlock'} size={14} />
+          Split
         </button>
-        <button
-          type="button"
-          class="delete-button"
-          title="Delete (Backspace)"
-          disabled={measurement.locked}
-          on:click={onDeleteClick}
-          data-testid="delete-measurement"
-        >
-          Delete
-        </button>
-      </div>
+      {/if}
+      <button
+        type="button"
+        class="lock-button"
+        title={measurement.locked ? 'Unlock to move, resize, or delete' : 'Lock to prevent moving, resizing, or deleting'}
+        on:click={onToggleLocked}
+        data-testid="lock-measurement"
+      >
+        <Icon name={measurement.locked ? 'lock' : 'unlock'} size={14} />
+      </button>
+      <button
+        type="button"
+        class="delete-button"
+        title="Delete (Backspace)"
+        disabled={measurement.locked}
+        on:click={onDeleteClick}
+        data-testid="delete-measurement"
+      >
+        Delete
+      </button>
     </div>
+  </div>
 
-    <section class="section">
-      <input
-        type="text"
-        class="name-input"
-        bind:value={nameDraft}
-        on:blur={onNameBlur}
-        on:keydown={onNameKeydown}
-        aria-label="Name"
-        data-testid="identity-name"
-      />
-      <div class="swatches" role="group" aria-label="Color">
-        {#each MEASUREMENT_COLORS as color (color)}
+  {#if splitConfigOpenForThis}
+    <!-- PO request ("Redesign and fix Split functionality") — replaces the old unlabeled
+         line-draw-on-canvas default: pick a part count + distribution here, one click computes
+         everything (core/drawing/splitParts.ts), no canvas interaction needed. The previous
+         line-draw flow is retained one step further down as an explicitly labeled "Manual split"
+         fallback, not deleted. -->
+    <section class="section split-config" data-testid="split-config">
+      <label class="notes-label" for="split-parts-count">Number of parts</label>
+      <div class="split-count-row">
+        {#each [2, 3, 4] as n (n)}
           <button
             type="button"
-            class="swatch"
-            class:active={measurement.identity.color === color}
-            style="background: {color}"
-            aria-label="Set color {color}"
-            aria-pressed={measurement.identity.color === color}
-            data-testid="swatch-{color}"
-            on:click={() => onColorPick(color)}
-          ></button>
+            class="split-count-preset"
+            class:active={$splitPartsCount === n}
+            on:click={() => splitPartsCount.set(n)}
+            data-testid="split-count-{n}"
+          >
+            {n}
+          </button>
         {/each}
+        <input
+          id="split-parts-count"
+          type="number"
+          min="2"
+          max="24"
+          step="1"
+          class="split-count-input"
+          value={$splitPartsCount}
+          on:input={(e) => splitPartsCount.set(Math.max(2, Math.min(24, Number(e.currentTarget.value) || 2)))}
+          aria-label="Custom number of parts"
+          data-testid="split-count-custom"
+        />
       </div>
-    </section>
 
-    {#if display}
-      <section class="section values">
-        {#if display.values.area !== undefined}
-          <div class="value-row"><span>Area</span><strong>{display.primaryLabel}</strong></div>
-        {/if}
-        {#if display.values.perimeter !== undefined}
-          <div class="value-row">
-            <span>Perimeter</span><strong>{formatLengthValue(display.values.perimeter, display.values.unit)}</strong>
-          </div>
-        {/if}
-        {#if display.values.length !== undefined && display.values.area === undefined}
-          <div class="value-row"><span>Length</span><strong>{display.primaryLabel}</strong></div>
-        {/if}
-        {#if display.values.vertexCount !== undefined}
-          <div class="value-row"><span>Vertices</span><strong>{display.values.vertexCount}</strong></div>
-        {/if}
-        {#if measurement.shape.type === 'rectangle' && canEditDimensions}
+      <span class="notes-label">Distribution</span>
+      <div class="split-distribution-row" role="group" aria-label="Distribution">
+        <button
+          type="button"
+          class="split-distribution-option"
+          class:active={$splitDistribution === 'equal'}
+          on:click={() => splitDistribution.set('equal')}
+          data-testid="split-distribution-equal"
+        >
+          Equal
+        </button>
+        <button
+          type="button"
+          class="split-distribution-option"
+          class:active={$splitDistribution === 'random'}
+          on:click={() => splitDistribution.set('random')}
+          data-testid="split-distribution-random"
+        >
+          Random
+        </button>
+      </div>
+
+      {#if $splitPartsError}
+        <p class="split-error" data-testid="split-error">{$splitPartsError}</p>
+      {/if}
+
+      <button type="button" class="split-confirm-button" on:click={confirmSplitParts} data-testid="split-confirm">
+        Split polygon
+      </button>
+      <button type="button" class="manual-split-link" on:click={onManualSplitClick} data-testid="manual-split-link">
+        Manual split (draw a line)
+      </button>
+    </section>
+  {/if}
+
+  <section class="section">
+    <input
+      type="text"
+      class="name-input"
+      bind:value={nameDraft}
+      on:blur={onNameBlur}
+      on:keydown={onNameKeydown}
+      aria-label="Name"
+      data-testid="identity-name"
+    />
+    <div class="swatches" role="group" aria-label="Color">
+      {#each MEASUREMENT_COLORS as color (color)}
+        <button
+          type="button"
+          class="swatch"
+          class:active={measurement.identity.color === color}
+          style="background: {color}"
+          aria-label="Set color {color}"
+          aria-pressed={measurement.identity.color === color}
+          data-testid="swatch-{color}"
+          on:click={() => onColorPick(color)}
+        ></button>
+      {/each}
+    </div>
+  </section>
+
+  {#if display}
+    <section class="section values">
+      {#if display.values.area !== undefined}
+        <div class="value-row"><span>Area</span><strong>{display.primaryLabel}</strong></div>
+      {/if}
+      {#if display.values.perimeter !== undefined && baseDisplay}
+        <div class="value-row">
+          <span>Perimeter</span><strong>{formatLengthValue(display.values.perimeter, baseDisplay.values.unit)}</strong>
+        </div>
+      {/if}
+      {#if display.values.length !== undefined && display.values.area === undefined}
+        <div class="value-row"><span>Length</span><strong>{display.primaryLabel}</strong></div>
+      {/if}
+      {#if display.values.vertexCount !== undefined}
+        <div class="value-row"><span>Vertices</span><strong>{display.values.vertexCount}</strong></div>
+      {/if}
+      {#if measurement.shape.type === 'polygon'}
+        <!-- PO request (manual area) — an explicit, real-world reference area (m²), independent
+             of Surface.calibration; separate from the geometrically calculated Area row above
+             (which switches to reflect this value once set, applyManualArea in computeDisplay.ts). -->
+        <div class="value-row dimension-row">
+          <span>Area (m²)</span>
+          <span class="dimension-input-group">
+            <input
+              type="text"
+              inputmode="decimal"
+              class="dimension-input"
+              bind:value={manualAreaDraft}
+              on:blur={commitManualArea}
+              on:keydown={onNameKeydown}
+              disabled={measurement.locked}
+              aria-label="Manual area in square meters"
+              data-testid="manual-area"
+            />
+            {#if measurement.manualArea}
+              <button
+                type="button"
+                class="manual-area-clear"
+                title="Revert to calculated area"
+                disabled={measurement.locked}
+                on:click={onClearManualArea}
+                data-testid="manual-area-clear"
+              >
+                Auto
+              </button>
+            {/if}
+          </span>
+        </div>
+      {/if}
+      {#if measurement.shape.type === 'rectangle' && canEditDimensions}
           <div class="value-row dimension-row">
             <span>Width</span>
             <span class="dimension-input-group">
@@ -461,74 +655,76 @@
         ></textarea>
       {/if}
     </section>
-  </div>
 {:else if $selectedMeasurementIds.size > 1}
-  <div class="panel" data-testid="property-panel-multi">
-    <div class="header-row">
-      <span class="header">{$selectedMeasurementIds.size} measurements selected</span>
-      <button
-        type="button"
-        class="delete-button"
-        title="Delete (Backspace)"
-        on:click={deleteSelectedMeasurement}
-        data-testid="delete-measurement"
-      >
-        Delete
-      </button>
-    </div>
-
-    <section class="section">
-      <span class="notes-label">Set color for all selected</span>
-      <div class="swatches" role="group" aria-label="Color for all selected">
-        {#each MEASUREMENT_COLORS as color (color)}
-          <button
-            type="button"
-            class="swatch"
-            style="background: {color}"
-            aria-label="Set color {color} for all selected"
-            on:click={() => onBulkColorPick(color)}
-            data-testid="multi-swatch-{color}"
-          ></button>
-        {/each}
-      </div>
-    </section>
-
-    {#if multiTotalAreaLabel}
-      <section class="section values">
-        <div class="value-row"><span>Total area</span><strong>{multiTotalAreaLabel}</strong></div>
-      </section>
-    {/if}
+  <div class="header-row">
+    <span class="header">{$selectedMeasurementIds.size} measurements selected</span>
+    <button
+      type="button"
+      class="delete-button"
+      title="Delete (Backspace)"
+      on:click={deleteSelectedMeasurement}
+      data-testid="delete-measurement"
+    >
+      Delete
+    </button>
   </div>
-{:else if $backgroundSelected}
-  <div class="panel" data-testid="property-panel-background">
-    <div class="header-row">
-      <span class="header">Background</span>
+
+  <section class="section">
+    <span class="notes-label">Set color for all selected</span>
+    <div class="swatches" role="group" aria-label="Color for all selected">
+      {#each MEASUREMENT_COLORS as color (color)}
+        <button
+          type="button"
+          class="swatch"
+          style="background: {color}"
+          aria-label="Set color {color} for all selected"
+          on:click={() => onBulkColorPick(color)}
+          data-testid="multi-swatch-{color}"
+        ></button>
+      {/each}
     </div>
+  </section>
 
-    <section class="section">
-      <button
-        type="button"
-        class="lock-row"
-        on:click={() => setImageLocked(!imageLocked)}
-        data-testid="background-properties-lock-toggle"
-      >
-        <Icon name={imageLocked ? 'lock' : 'unlock'} size={15} />
-        <span>
-          {imageLocked
-            ? 'Locked — click to unlock'
-            : 'Unlocked — drag a corner to resize, drag the image to move'}
-        </span>
-      </button>
+  {#if multiTotalAreaLabel}
+    <section class="section values">
+      <div class="value-row"><span>Total area</span><strong>{multiTotalAreaLabel}</strong></div>
     </section>
+  {/if}
+{:else if $backgroundSelected}
+  <div class="header-row">
+    <span class="header">Background</span>
+  </div>
 
-    {#if $activeSurface?.imageRect}
-      <section class="section values">
-        <div class="value-row"><span>Width</span><strong>{Math.round($activeSurface.imageRect.width)} px</strong></div>
-        <div class="value-row"><span>Height</span><strong>{Math.round($activeSurface.imageRect.height)} px</strong></div>
-      </section>
-    {/if}
+  <section class="section">
+    <button
+      type="button"
+      class="lock-row"
+      on:click={() => setImageLocked(!imageLocked)}
+      data-testid="background-properties-lock-toggle"
+    >
+      <Icon name={imageLocked ? 'lock' : 'unlock'} size={15} />
+      <span>
+        {imageLocked
+          ? 'Locked — click to unlock'
+          : 'Unlocked — drag a corner to resize, drag the image to move'}
+      </span>
+    </button>
+  </section>
+
+  {#if $activeSurface?.imageRect}
+    <section class="section values">
+      <div class="value-row"><span>Width</span><strong>{Math.round($activeSurface.imageRect.width)} px</strong></div>
+      <div class="value-row"><span>Height</span><strong>{Math.round($activeSurface.imageRect.height)} px</strong></div>
+    </section>
+  {/if}
+{:else}
+  <!-- PO request ("Keep the right Properties panel permanently visible") — the empty state: the
+       panel column itself never disappears, only its content changes. -->
+  <div class="empty-state" data-testid="property-panel-empty">
+    <p>Select a shape to edit its properties</p>
   </div>
 {/if}
+</div>
 
 <style>
   .panel {
@@ -580,6 +776,10 @@
     color: var(--af-accent);
   }
 
+  .split-button.active {
+    background: color-mix(in srgb, var(--af-accent) 15%, transparent);
+  }
+
   .lock-button {
     display: flex;
     align-items: center;
@@ -623,6 +823,117 @@
     border: 1px solid var(--af-border-subtle);
     border-radius: var(--af-radius-sm);
     padding: 6px 8px;
+  }
+
+  .empty-state {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 24px;
+  }
+
+  .empty-state p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--af-ink-tertiary);
+    text-align: center;
+  }
+
+  .split-config {
+    background: var(--af-surface-app);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 10px;
+  }
+
+  .split-count-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .split-count-preset,
+  .split-distribution-option {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--af-ink-secondary);
+    background: var(--af-surface-panel);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+
+  .split-count-preset.active,
+  .split-distribution-option.active {
+    color: var(--af-accent-ink);
+    background: var(--af-accent);
+    border-color: var(--af-accent);
+  }
+
+  .split-count-input {
+    width: 48px;
+    font: inherit;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-ink-primary);
+    background: var(--af-surface-panel);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 5px 6px;
+    text-align: right;
+  }
+
+  .split-distribution-row {
+    display: flex;
+    gap: 4px;
+  }
+
+  .split-error {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--af-danger);
+  }
+
+  .split-confirm-button {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--af-accent-ink);
+    background: var(--af-accent);
+    border: none;
+    border-radius: var(--af-radius-sm);
+    padding: 7px 10px;
+    cursor: pointer;
+  }
+
+  .manual-split-link {
+    font: inherit;
+    font-size: 11.5px;
+    color: var(--af-ink-tertiary);
+    background: none;
+    border: none;
+    padding: 2px;
+    text-align: left;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .manual-area-clear {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--af-ink-tertiary);
+    background: none;
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+
+  .manual-area-clear:hover:not(:disabled) {
+    color: var(--af-ink-primary);
+    border-color: var(--af-accent);
   }
 
   .lock-row {

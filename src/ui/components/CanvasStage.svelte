@@ -19,6 +19,7 @@
     deselectAll,
     flashBackgroundLock,
     executeCommand,
+    setLabelOffset,
   } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
   import { openContextMenu } from '../contextMenu/contextMenuSession.js';
@@ -71,6 +72,13 @@
   } from '../stores/imageResizeSession.js';
   import { activateVertexLabel, clearActiveVertexLabel } from '../stores/vertexLabelSession.js';
   import {
+    labelDrag,
+    pointerDown as labelDragPointerDown,
+    pointerMove as labelDragPointerMove,
+    pointerUp as labelDragPointerUp,
+    cancelDrag as cancelLabelDrag,
+  } from '../stores/labelDragSession.js';
+  import {
     viewport,
     zoomWheel,
     resetZoomAt,
@@ -99,7 +107,7 @@
     type ContainRect,
   } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
-  import { computeMeasurementDisplay } from '../measurement/computeDisplay.js';
+  import { computeMeasurementDisplay, applyManualArea } from '../measurement/computeDisplay.js';
   import type { Point, PolygonShape, Shape } from '../../core/domain/types.js';
   import type { MeasurementId } from '../../core/domain/entities.js';
   import type { DrawingDraft } from '../stores/drawingSession.js';
@@ -114,6 +122,11 @@
     readonly x: number;
     readonly y: number;
     readonly selected: boolean;
+    // PO request (draggable polygon labels) — Polygon chips only; `centroid` is the world-space
+    // anchor labelDragSession.ts measures its delta from (needed at drag-start, screen space
+    // alone isn't enough once zoom/pan is involved).
+    readonly draggable: boolean;
+    readonly centroid: Point;
   }
 
   let container: HTMLDivElement;
@@ -435,6 +448,10 @@
   }
 
   function onMouseDown(event: MouseEvent): void {
+    // PO request (draggable polygon labels) — defensive guard, same style as the $labelDrag check
+    // in onMouseMove; a chip's own mousedown already stops propagation before reaching here, so
+    // this only matters if a drag were somehow still live from a prior gesture.
+    if ($labelDrag) return;
     if (isPanTrigger(event)) {
       startOverridePan(event);
       return;
@@ -527,6 +544,10 @@
   }
 
   function onMouseMove(event: MouseEvent): void {
+    // PO request (draggable polygon labels) — an active label drag owns the pointer exclusively
+    // (mirrors the $panDrag guard right below); its own mousemove handling lives in the
+    // <svelte:window> binding, not here.
+    if ($labelDrag) return;
     if ($panDrag) {
       panTo(event.clientX, event.clientY);
       return;
@@ -609,6 +630,27 @@
       pendingShapeDrag = null;
     }
     if ($imageResizeDrag) imageResizePointerUp();
+    if ($labelDrag) {
+      const committed = labelDragPointerUp();
+      if (committed) setLabelOffset(committed.measurementId, committed.dx, committed.dy);
+    }
+  }
+
+  /** PO request (draggable polygon labels) — MeasurementChip's `onDragStart` for a Polygon chip.
+   * `chip.centroid` is already known (the same value the chip was positioned with); the
+   * containment check itself happens per-move in `onWindowMouseMove` below, against the shape's
+   * *current* vertices, so a concurrent edit elsewhere is never checked against stale geometry. */
+  function onChipDragStart(chip: ChipData, event: MouseEvent): void {
+    const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === chip.id);
+    if (!measurement || measurement.shape.type !== 'polygon') return;
+    labelDragPointerDown(chip.id, event.clientX, event.clientY, chip.centroid, measurement.labelOffset);
+  }
+
+  function onWindowMouseMove(event: MouseEvent): void {
+    if (!$labelDrag) return;
+    const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === $labelDrag!.measurementId);
+    if (!measurement || measurement.shape.type !== 'polygon') return;
+    labelDragPointerMove(event.clientX, event.clientY, $viewport.scale, measurement.shape.vertices);
   }
 
   // 15 §14.4 "Двоен клик" — reserved solely for the per-vertex label workflow now (PO follow-up,
@@ -712,6 +754,7 @@
   // without an explicit Esc. Does NOT deselect (selection persists across a tool switch).
   $: if ($activeTool !== null && $vertexDrag) cancelDrag();
   $: if ($activeTool !== null && $splittingId) cancelSplit();
+  $: if ($activeTool !== null && $labelDrag) cancelLabelDrag();
 
   // 15 §5 F7 step 3 — live dual-area ghost labels, one per resulting child, once the split line
   // crosses the parent boundary exactly twice (canSplit). Recomputed here (not read from
@@ -831,8 +874,24 @@
   $: chips = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? [])
     .filter((measurement) => !measurement.identity.hidden)
     .map((measurement): ChipData => {
-      const { x, y } = worldToScreen($viewport, shapeCentroid(measurement.shape));
-      const { primaryLabel } = computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, $displayUnit);
+      const centroid = shapeCentroid(measurement.shape);
+      // PO request (draggable polygon labels) — the live drag preview (labelDragSession.ts)
+      // overrides the persisted labelOffset while actively dragging this chip; otherwise the
+      // persisted offset (if any) applies, else the plain centroid (unchanged prior behavior).
+      // Polygon only, per the request's own "within its own polygon" scope.
+      const liveDrag = $labelDrag && $labelDrag.measurementId === measurement.id ? $labelDrag : null;
+      const offset = liveDrag ?? (measurement.shape.type === 'polygon' ? measurement.labelOffset : undefined);
+      const worldPoint = offset ? { x: centroid.x + offset.dx, y: centroid.y + offset.dy } : centroid;
+      const { x, y } = worldToScreen($viewport, worldPoint);
+      // QA fix (manual area) — the floating chip is a projection of the same Measurement data
+      // PropertyPanel/MeasurementList already show with the manual-area override applied; without
+      // this it kept showing the raw geometric area even after a manual area was set.
+      const { primaryLabel } = applyManualArea(
+        computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, $displayUnit),
+        measurement.manualArea,
+        measurement.shape.type === 'polygon' ? measurement.shape.vertices : undefined,
+        $displayUnit,
+      );
       return {
         id: measurement.id,
         name: measurement.identity.name,
@@ -841,6 +900,8 @@
         y,
         // item A13 "multi-select" — every selected Measurement's chip highlights, not just one.
         selected: $selectedMeasurementIds.has(measurement.id),
+        draggable: measurement.shape.type === 'polygon',
+        centroid,
       };
     });
 
@@ -911,7 +972,12 @@
   });
 </script>
 
-<svelte:window on:mouseup={onWindowMouseUp} on:keydown={onWindowKeydown} on:keyup={onWindowKeyup} />
+<svelte:window
+  on:mouseup={onWindowMouseUp}
+  on:mousemove={onWindowMouseMove}
+  on:keydown={onWindowKeydown}
+  on:keyup={onWindowKeyup}
+/>
 
 <div
   class="canvas-stage"
@@ -947,9 +1013,11 @@
       y={chip.y}
       selected={chip.selected}
       interactive={chipsInteractive}
+      draggable={chip.draggable}
       onSelect={(e) => (e.shiftKey ? toggleMeasurementSelection(chip.id) : selectMeasurement(chip.id))}
       onRename={(name) => renameMeasurement(chip.id, name)}
       onContextMenu={(e) => openMeasurementMenuFor(chip.id, e)}
+      onDragStart={(e) => onChipDragStart(chip, e)}
     />
   {/each}
   {#each vertexLabelChips as label (label.key)}

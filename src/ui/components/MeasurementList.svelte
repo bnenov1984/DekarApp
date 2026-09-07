@@ -21,7 +21,7 @@
     executeCommand,
   } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
-  import { computeMeasurementDisplay, formatAreaValue } from '../measurement/computeDisplay.js';
+  import { computeMeasurementDisplay, applyManualArea, formatAreaValue } from '../measurement/computeDisplay.js';
   import Icon from './Icon.svelte';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
   import { splittingId } from '../stores/splitSession.js';
@@ -52,7 +52,15 @@
   }
 
   function toRow(measurement: Measurement, depth: number, isSplitParent: boolean, unit: Unit): Row {
-    const display = computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, unit);
+    // PO request (manual area) — same override PropertyPanel applies: a Measurement with a
+    // manual area shows it here too (D8: every canvas/panel affordance has a list counterpart),
+    // rather than the row quietly disagreeing with the Properties panel's own Area value.
+    const display = applyManualArea(
+      computeMeasurementDisplay(measurement.shape, $activeSurface!.calibration, unit),
+      measurement.manualArea,
+      measurement.shape.type === 'polygon' ? measurement.shape.vertices : undefined,
+      unit,
+    );
     return {
       id: measurement.id,
       name: measurement.identity.name,

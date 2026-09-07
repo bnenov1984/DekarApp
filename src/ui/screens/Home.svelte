@@ -1,19 +1,58 @@
 <script lang="ts">
-  // 15_UX_SPECIFICATION.md §6/W4 — Home: three Start affordances. Map and Import still need
-  // adapters that don't exist yet (MapProvider, file-parsing — P-05 territory), shown honestly as
-  // not-yet-available. Recent (15 W4) is live as of the Persistence slice — real
-  // ProjectRepository.list() cards, "recognized by its result" (preview area, not a thumbnail —
-  // no render-to-static-image pipeline exists, W4's literal preview thumbnails are a later slice).
+  // 15_UX_SPECIFICATION.md §6/W4 — Home: three Start affordances. Map still needs an adapter
+  // that doesn't exist yet (MapProvider — P-05 territory), shown honestly as not-yet-available.
+  // Import (PNG/JPG, PD-011 v1 scope) is wired to appState.ts's importImageProject; PDF/Map
+  // import are separate, larger slices (multi-Surface-per-file / MapProvider respectively), not
+  // this one. Recent (15 W4) is live as of the Persistence slice — real ProjectRepository.list()
+  // cards, "recognized by its result" (preview area, not a thumbnail — no render-to-static-image
+  // pipeline exists, W4's literal preview thumbnails are a later slice).
   import { onMount } from 'svelte';
-  import { startBlankProject, loadProject, recentProjects, refreshRecentProjects } from '../stores/appState.js';
+  import {
+    startBlankProject,
+    loadProject,
+    importImageProject,
+    recentProjects,
+    refreshRecentProjects,
+    type ImportImageError,
+  } from '../stores/appState.js';
+  import Icon from '../components/Icon.svelte';
   import type { Unit } from '../../core/domain/types.js';
 
   onMount(refreshRecentProjects);
 
+  // PO follow-up (UX review, item B2 "thousands separators") — same grouped-number treatment as
+  // computeDisplay.ts's formatAreaValue (Studio's own labels); this one stays a local, cruder
+  // whole-number rounding since Recent cards don't carry a Measurement's actual precision context
+  // (no calibration decimals to respect here, just "how big is this project" at a glance).
+  const areaNumberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
   function formatArea(area: number, unit: Unit): string {
-    const rounded = Math.round(area);
+    const rounded = areaNumberFormat.format(area);
     const label = unit === 'px' ? 'px²' : unit === 'm2' ? 'm²' : unit === 'ft2' ? 'ft²' : unit;
     return `${rounded} ${label}`;
+  }
+
+  let fileInput: HTMLInputElement;
+  let importError: ImportImageError | null = null;
+
+  const IMPORT_ERROR_MESSAGES: Record<ImportImageError, string> = {
+    UNSUPPORTED_FORMAT: 'Unsupported file — only PNG and JPG images can be imported yet.',
+    CORRUPT_FILE: "That file couldn't be read as an image.",
+  };
+
+  function openFilePicker(): void {
+    importError = null;
+    fileInput.click();
+  }
+
+  async function onFileChosen(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-choosing the same file after a failed attempt
+    if (!file) return;
+
+    const result = await importImageProject(file);
+    importError = result.ok ? null : result.error;
   }
 </script>
 
@@ -25,23 +64,35 @@
 
   <div class="cards">
     <button class="card" on:click={startBlankProject}>
-      <span class="icon" aria-hidden="true">▦</span>
+      <span class="icon"><Icon name="grid" size={28} /></span>
       <span class="title">Blank canvas</span>
       <span class="desc">Start drawing directly</span>
     </button>
 
     <button class="card disabled" disabled title="Needs a map provider — not wired up yet">
-      <span class="icon" aria-hidden="true">🗺</span>
+      <span class="icon"><Icon name="map-pin" size={28} /></span>
       <span class="title">On a map</span>
       <span class="desc">Coming soon</span>
     </button>
 
-    <button class="card disabled" disabled title="Needs file import — not wired up yet">
-      <span class="icon" aria-hidden="true">🖼</span>
+    <button class="card" on:click={openFilePicker}>
+      <span class="icon"><Icon name="image" size={28} /></span>
       <span class="title">Import a file</span>
-      <span class="desc">Coming soon</span>
+      <span class="desc">PNG or JPG</span>
     </button>
+    <input
+      type="file"
+      accept="image/png,image/jpeg"
+      bind:this={fileInput}
+      on:change={onFileChosen}
+      class="visually-hidden"
+      data-testid="import-file-input"
+    />
   </div>
+
+  {#if importError}
+    <p class="import-error" data-testid="import-error">{IMPORT_ERROR_MESSAGES[importError]}</p>
+  {/if}
 
   {#if $recentProjects.length > 0}
     <div class="recent">
@@ -129,7 +180,12 @@
   }
 
   .icon {
-    font-size: 28px;
+    color: var(--af-accent);
+    margin-bottom: 2px;
+  }
+
+  .card.disabled .icon {
+    color: var(--af-ink-tertiary);
   }
 
   .title {
@@ -141,6 +197,24 @@
   .desc {
     font-size: 12px;
     color: var(--af-ink-secondary);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .import-error {
+    margin: -24px 0 0;
+    font-size: 12.5px;
+    color: var(--af-danger, #C62828);
   }
 
   .recent {
