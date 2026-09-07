@@ -6,8 +6,9 @@ import { rectangleCorners } from '../../core/measurement/formulas.js';
 
 // docs/21_ARCHITECTURE.md §6.2/§6.3 — the scene graph: a *derived* projection of Shape VOs onto
 // Canvas2D draw calls. This module never mutates a Shape and never owns geometry — it only
-// reads. No raster layer yet (no Image/PDF import exists to have a background) — this is the
-// vector overlay alone (ADR-002's two-layer composition becomes relevant once import exists).
+// reads. `drawBackgroundImage` below is the raster half of ADR-002's two-layer composition
+// (CanvasStage.svelte owns a second, separately-repainted canvas for it) — everything else here
+// remains the vector overlay.
 
 function pathForShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
   switch (shape.type) {
@@ -69,7 +70,14 @@ function drawMeasurement(
 
   ctx.lineWidth = selected ? 2.5 : 1.5;
   ctx.strokeStyle = selected ? accentColor : color;
+  // docs/16_DESIGN_SYSTEM.md §"MeasurementShape states" — locked gets a short-dash outline (same
+  // "protection from accidental editing" signal the Layers panel's lock icon/PropertyPanel's
+  // disabled dimension inputs already give, just visible directly on canvas without opening
+  // either panel). Always set explicitly (not just when locked) so this measurement's stroke never
+  // inherits a dash pattern a previous locked measurement in the same drawSurface pass left behind.
+  ctx.setLineDash(measurement.locked ? [4, 3] : []);
   ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 function withAlpha(hexOrColor: string, alpha: number): string {
@@ -82,6 +90,52 @@ function withAlpha(hexOrColor: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+export interface ContainRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** "object-fit: contain" math for the imported-image background (18/19 — Surface-space ==
+ * CSS-pixel-space simplification, ISS-010: no pan/zoom exists yet, so the whole image is scaled
+ * to fit the current viewport rather than shown at native resolution with scrolling). Returns a
+ * degenerate all-zero rect for any non-positive input rather than dividing by zero/NaN, since a
+ * still-loading or zero-size container is a real, reachable state (resize observer fires before
+ * the image decode resolves, or vice versa). */
+export function computeContainRect(
+  imageWidth: number,
+  imageHeight: number,
+  boxWidth: number,
+  boxHeight: number,
+): ContainRect {
+  if (imageWidth <= 0 || imageHeight <= 0 || boxWidth <= 0 || boxHeight <= 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+  const scale = Math.min(boxWidth / imageWidth, boxHeight / imageHeight);
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+  return { x: (boxWidth - width) / 2, y: (boxHeight - height) / 2, width, height };
+}
+
+/** The raster half of ADR-002's two-layer composition — drawn on its own canvas, behind the
+ * vector overlay (CanvasStage.svelte), and only repainted when the image, its rect, or the
+ * container size changes (never on every mouse move, unlike `drawSurface`/`drawInProgress`).
+ * `explicitRect` is the user-resized `Surface.imageRect` (or a live drag preview) — falls back to
+ * the "contain"-fit default only until the user first resizes it (PO request). */
+export function drawBackgroundImage(
+  ctx: CanvasRenderingContext2D,
+  image: ImageBitmap,
+  widthCss: number,
+  heightCss: number,
+  explicitRect?: ContainRect,
+): void {
+  ctx.clearRect(0, 0, widthCss, heightCss);
+  const rect = explicitRect ?? computeContainRect(image.width, image.height, widthCss, heightCss);
+  if (rect.width <= 0 || rect.height <= 0) return;
+  ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+}
+
 /** Clears and redraws every Measurement on `surface`. `widthCss`/`heightCss` are CSS-pixel
  * dimensions (the ctx transform already applies devicePixelRatio, CanvasStage.svelte §1).
  * `accentColor` is read from the live `--af-accent` custom property by the caller (CanvasStage)
@@ -90,7 +144,7 @@ function withAlpha(hexOrColor: string, alpha: number): string {
 export function drawSurface(
   ctx: CanvasRenderingContext2D,
   surface: Surface,
-  selectedId: string | null,
+  selectedIds: ReadonlySet<string>,
   widthCss: number,
   heightCss: number,
   accentColor: string,
@@ -99,7 +153,12 @@ export function drawSurface(
   for (const layer of surface.layers) {
     if (!layer.visible) continue;
     for (const measurement of layer.measurements) {
-      drawMeasurement(ctx, measurement, measurement.id === selectedId, accentColor);
+      // PO follow-up (UX review, item A5 "eye icon = real visibility") — a hidden Measurement
+      // (identity.hidden, entities.ts) isn't drawn at all, not just its chip.
+      if (measurement.identity.hidden) continue;
+      // item A13 "multi-select" — every selected Measurement gets the same highlight treatment,
+      // not just a single "the" selected one.
+      drawMeasurement(ctx, measurement, selectedIds.has(measurement.id), accentColor);
     }
   }
 }
@@ -199,8 +258,10 @@ export function drawInProgress(
 // rightmost point (resize — `resizeCircleRadius`), matching where `pathForShape` above starts
 // drawing the circle's own stroke. Line has none (whole-shape move only this slice, no dedicated
 // resize handle requested) — a local switch rather than importing hitTest.ts's private helper,
-// matching this file's existing `pathForShape` style.
-function resizeHandlePoints(shape: Shape): readonly Point[] | null {
+// matching this file's existing `pathForShape` style. Exported (PO request, per-vertex
+// annotation): CanvasStage.svelte reuses this same index<->position mapping to position vertex
+// label chips, so a label always tracks its vertex through edits/resizes/moves.
+export function resizeHandlePoints(shape: Shape): readonly Point[] | null {
   switch (shape.type) {
     case 'polygon':
       return shape.vertices;
@@ -288,6 +349,41 @@ export function drawSplitPreview(
       ctx.restore();
     }
   }
+}
+
+/** PO follow-up (background layer selectability) — a plain solid outline, no handles, for the
+ * Background image when it's selected but locked: enough feedback that "this is the active
+ * layer" without implying it's draggable (`drawVertexHandles`/`drawVertexEditPreview` stay
+ * reserved for the actually-interactive unlocked case). */
+export function drawSelectionOutline(ctx: CanvasRenderingContext2D, shape: Shape, accentColor: string): void {
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = accentColor;
+  ctx.beginPath();
+  pathForShape(ctx, shape);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** PO follow-up (UX review, item A13 "multi-select marquee") — the live rubber-band rectangle
+ * while a marquee-select drag is in progress (CanvasStage.svelte): a translucent accent fill plus
+ * a dashed outline, same "unconfirmed/in-progress" visual language as `drawInProgress`'s draft
+ * shape preview and `drawCalibrationLine`'s reference line — nothing here is a Measurement, so it
+ * never reaches `computeMeasurementDisplay`. */
+export function drawMarquee(ctx: CanvasRenderingContext2D, from: Point, to: Point, accentColor: string): void {
+  const x = Math.min(from.x, to.x);
+  const y = Math.min(from.y, to.y);
+  const width = Math.abs(to.x - from.x);
+  const height = Math.abs(to.y - from.y);
+
+  ctx.save();
+  ctx.fillStyle = withAlpha(accentColor, 0.1);
+  ctx.fillRect(x, y, width, height);
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = accentColor;
+  ctx.strokeRect(x, y, width, height);
+  ctx.restore();
 }
 
 /** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
