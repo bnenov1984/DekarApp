@@ -115,9 +115,22 @@ interface CloudAdapter {
   push(snapshot: AggregateSnapshot): Promise<void>
   pull(aggregateId: string, sinceVersion: number): Promise<AggregateSnapshot | null>
 }
+
+interface AuthAdapter {
+  getSession(): Promise<AuthSession | null>
+  signInWithPassword(email: string, password: string): Promise<Result<AuthSession, AuthError>>
+  signUpWithPassword(email: string, password: string, name?: string): Promise<Result<AuthSession, AuthError>>
+  signOut(): Promise<void>
+  requestPasswordReset(email: string): Promise<void>
+  onSessionChange(callback: (session: AuthSession | null) => void): () => void
+  // AuthAdapter изолира Better Auth (26_ADR/ADR-007) зад същата граница като другите четири —
+  // Core/Application никога не импортират неговия client SDK директно, само този тесен порт.
+}
 ```
 
-Всеки от четирите има **точно един contract test suite** (22 §7) — fake имплементация (за тестове) и реална имплементация (Phase 4) минават eднакъв suite, за да е гарантирано поведенческо еквивалентни.
+**`AuthAdapter` добавен при Phase 1 на SaaS миграцията** (26_ADR/ADR-007) — Application слоят се нуждае от абстрактно понятие за "текуща сесия", преди да съществува конкретен auth provider зад него. Не заменя, нито ограничава PD-012 local-first поведението: ако потребителят никога не влезе, адаптерът просто никога не се вика — UI и Application продължават да работят изцяло срещу `ProjectRepository`/`SurfaceRepository` както днес.
+
+Всеки от петте адаптера има **точно един contract test suite** (22 §7) — fake имплементация (за тестове) и реална имплементация (Phase 4) минават eднакъв suite, за да е гарантирано поведенческо еквивалентни.
 
 ---
 
