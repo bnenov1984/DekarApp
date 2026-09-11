@@ -95,7 +95,7 @@ adding an API surface, or anything that shifts which module owns what.
   interface is owned by the layer that defines it, not the one that calls it), the relevant
   [26_ADR/ADR-*.md](26_ADR/) for the specific decision already made (persistence → ADR-004; sync
   conflicts → ADR-005; rendering → ADR-002; extension isolation → ADR-003; undo → ADR-001; UI
-  framework → ADR-006).
+  framework → ADR-006; backend hosting/framework → ADR-007).
 - **Supporting:** [14_DOMAIN_MODEL.md](14_DOMAIN_MODEL.md) §2 (aggregate boundaries, which drive
   persistence transaction boundaries).
 - **Consult if relevant:** [22_TDD.md](22_TDD.md) §2 (contract-test pattern — a fake and a real
