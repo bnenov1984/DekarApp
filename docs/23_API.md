@@ -113,7 +113,10 @@ interface StorageAdapter {
 
 interface CloudAdapter {
   push(snapshot: AggregateSnapshot): Promise<void>
-  pull(aggregateId: string, sinceVersion: number): Promise<AggregateSnapshot | null>
+  pull(kind: AggregateKind, aggregateId: string, sinceVersion: number, parentId?: string): Promise<AggregateSnapshot | null>
+  // "which projects can I pull" bootstrap — push/pull-by-id alone can't answer it without
+  // already knowing the id. Empty when signed out or nothing saved to the account yet.
+  listOwnedProjects(): Promise<readonly CloudProjectRef[]>
 }
 
 interface AuthAdapter {
@@ -129,6 +132,8 @@ interface AuthAdapter {
 ```
 
 **`AuthAdapter` добавен при Phase 1 на SaaS миграцията** (26_ADR/ADR-007) — Application слоят се нуждае от абстрактно понятие за "текуща сесия", преди да съществува конкретен auth provider зад него. Не заменя, нито ограничава PD-012 local-first поведението: ако потребителят никога не влезе, адаптерът просто никога не се вика — UI и Application продължават да работят изцяло срещу `ProjectRepository`/`SurfaceRepository` както днес.
+
+**`CloudAdapter.pull` коригиран при Phase 3** (26_ADR/ADR-007) — Phase 1 версията вземаше само `aggregateId`, достатъчно за Project (собственият му id е целият URL по §6), но не и за Surface (endpoint-ът му изисква и id-то на родителския Project). Добавени `kind` към `pull` и `parentId` към `AggregateSnapshot`/`pull` (undefined за 'project', задължително на практика за 'surface'). Нищо не имплементираше този порт преди Phase 3, така че това е корекция преди първия реален консуматор, не breaking промяна. `listOwnedProjects()` добавен по същата причина, различна нужда: push/pull по id не могат да отговорят "кои проекти изобщо съществуват в облака за този потребител" — виж `CloudProjectRef` в кода за точната форма (никога заместител на `ProjectSummary`, 23 §3.1 — без `totalArea` проекция, cloud-ът никога не изчислява площи).
 
 Всеки от петте адаптера има **точно един contract test suite** (22 §7) — fake имплементация (за тестове) и реална имплементация (Phase 4) минават eднакъв suite, за да е гарантирано поведенческо еквивалентни.
 
@@ -174,19 +179,36 @@ interface DisplayResult {
 Единствената граница, където клиент и сървър се deploy-ват независимо — оттам идва нуждата от explicit версиониран REST контракт (за разлика от Core/Application/Extension, които се доставят в един PWA bundle):
 
 ```
+GET /v1/projects
+  → 200 OK { projects: CloudProjectRef[] }   // owned by the authenticated user; [] if none
+
+PUT /v1/projects/{projectId}
+  body: AggregateSnapshot (версия + shallow Project — id, name, workspaceId, surfaceIds, reportIds)
+  → 200 OK | 403 Forbidden (owned by a different user) | 409 Conflict { serverVersion, serverSnapshot }
+  // първи push на непознат projectId claim-ва ownership за текущия потребител (14 §2.2 Project
+  // печели ownerId едва тук — локалният Project не носи ownerId, докато не бъде запазен в акаунт)
+
+GET /v1/projects/{projectId}
+  → 200 OK { snapshot } | 403 Forbidden | 404 Not Found
+
 POST /v1/projects/{projectId}/surfaces/{surfaceId}
   body: AggregateSnapshot (версия + serialized Surface дърво)
-  → 200 OK | 409 Conflict { serverVersion, serverSnapshot }
+  → 200 OK | 403 Forbidden (не си owner на родителския Project) | 409 Conflict { serverVersion, serverSnapshot }
 
 GET /v1/projects/{projectId}/surfaces/{surfaceId}?since={version}
-  → 200 OK { snapshot } | 204 No Content (нищо ново)
+  → 200 OK { snapshot } | 204 No Content (нищо ново) | 403 Forbidden
 
-Auth: per-user token (bearer) — акаунт системата извън обхвата на този документ, минимална в v1 (само колкото Backup/Sync изисква)
+Auth: Better Auth session cookie (26_ADR/ADR-007) — всеки route по-горе изисква валидна сесия
+(401 Unauthenticated без нея); ownership проверката (403 — "този потребител ли притежава този
+Project") е отделна от автентикацията ("кой е потребителят") — Authentication срещу Authorization,
+не се смесват дори в толкова малка API повърхност
 ```
 
-**Conflict resolution е клиентска отговорност** (21 §5.3 last-write-wins): сървърът връща `409` с текущата версия при collision, `SyncEngine` (21 §5.3) на клиента решава по timestamp — сървърът остава простичък, без бизнес логика за merge (пряко следствие от PD-002/003 духа, приложен и извън Core: engines/services без бизнес логика, дори когато не са буквално "Core").
+**Conflict resolution е клиентска отговорност** (21 §5.3 last-write-wins): сървърът връща `409` с текущата версия при collision, клиентският `CloudAdapter`/бъдещ `SyncEngine` (21 §5.3) решава по timestamp — сървърът остава простичък, без бизнес логика за merge (пряко следствие от PD-002/003 духа, приложен и извън Core: engines/services без бизнес логика, дори когато не са буквално "Core").
 
-**Извън обхвата на този документ:** пълна акаунт/auth архитектура (P-02 монетизация зависимост), rate limiting, конкретен backend framework — Phase 4/имплементация детайли.
+**Project endpoints добавени при Phase 3** (26_ADR/ADR-007) — оригиналният §6 покриваше само Surface (нужен за push/pull на съществуващ, вече познат aggregate); "Save to account"/"return to your projects later" изискват и начин да се създаде/претендира Project ownership, и начин да се открият кои Project id-та изобщо принадлежат на текущия потребител (`GET /v1/projects`) — без него `pull`-ване по id е безполезно, защото клиентът никога не научава кои id-та да пита.
+
+**Извън обхвата на този документ:** rate limiting, конкретен backend framework (решено в 26_ADR/ADR-007) — оставащи Phase 4/имплементация детайли.
 
 ---
 

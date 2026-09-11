@@ -4,6 +4,7 @@ import { IndexedDbSurfaceRepository } from '../../adapters/indexeddb/surfaceRepo
 import { IndexedDbStorageAdapter } from '../../adapters/indexeddb/storageAdapter.js';
 import { IndexedDbSettingsRepository } from '../../adapters/indexeddb/settingsRepository.js';
 import { BetterAuthAdapter } from '../../adapters/betterAuth/authAdapter.js';
+import { HttpCloudAdapter } from '../../adapters/http/cloudAdapter.js';
 import { StorageQuotaExceededError } from '../../adapters/errors.js';
 
 // The composition root: the one place the UI layer picks a concrete Adapters-layer
@@ -23,6 +24,11 @@ export const settingsRepository = new IndexedDbSettingsRepository();
  * of AuthAdapter (23_API.md §4). Talks to areaflow-api; PD-012 still holds, since nothing
  * requires it to be reachable — see BetterAuthAdapter's own header for the failure story. */
 export const authAdapter = new BetterAuthAdapter();
+/** Phase 3 of the SaaS migration (docs/26_ADR/ADR-007) — first Adapters-layer implementation of
+ * CloudAdapter (23_API.md §4/§6). PD-012 still holds: local IndexedDB repositories above remain
+ * the source of truth for everything except the explicit "Save to account"/"Open cloud project"
+ * actions (ui/stores/cloudProjectsSession.ts) that reach this adapter on purpose. */
+export const cloudAdapter = new HttpCloudAdapter();
 
 /** 15 §16 — non-blocking; autosave (PD-012 D6: no Save button) has no explicit action to retry
  * from, so a failure surfaces as a StatusBar banner (StatusBar.svelte), never a blocking dialog. */

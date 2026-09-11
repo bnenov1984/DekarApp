@@ -58,6 +58,7 @@ Project (root)
 **Инварианти на Project:**
 - `ProjectSettings.workspaceRef` винаги сочи съществуващ Workspace в каталога (fallback: General, ако referenced workspace изчезне — не блокира отваряне на проекта).
 - Изтриване на Project е единствената операция без undo (IA §4, D7) — domain-но: единствената команда без inverse.
+- **`ownerId`** (Phase 3, 26_ADR/ADR-007) — `undefined` за всеки Project, който никога не е бил запазен в акаунт (PD-012: local-first, акаунт не се изисква); зададен веднъж, само от сървъра, при първия успешен `PUT /v1/projects/{id}` (23 §6) — никоя локална команда не го задава. Смяна на собственик не съществува като операция.
 
 ### 2.3. Workspace (Aggregate Root, отделен bounded context — App-level каталог)
 

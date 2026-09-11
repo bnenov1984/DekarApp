@@ -5,6 +5,15 @@
   // and PD-012's local-first promise holds: nobody has to touch this to draw and split parcels.
   import { authSession, authError, authPending, signIn, signUp, signOut, dismissAuthError } from '../stores/authSession.js';
   import { authAdapter } from '../stores/persistence.js';
+  import {
+    cloudProjects,
+    cloudSyncError,
+    cloudSyncPending,
+    refreshCloudProjects,
+    saveCurrentProjectToAccount,
+    openCloudProject,
+    dismissCloudSyncError,
+  } from '../stores/cloudProjectsSession.js';
   import Icon from './Icon.svelte';
 
   let open = false;
@@ -59,6 +68,29 @@
       resetForm();
     }
   }
+
+  let saveConfirmed = false;
+
+  async function handleSave(): Promise<void> {
+    saveConfirmed = await saveCurrentProjectToAccount();
+    if (saveConfirmed) setTimeout(() => (saveConfirmed = false), 2500);
+  }
+
+  async function handleOpenCloudProject(projectId: string): Promise<void> {
+    const ok = await openCloudProject(projectId);
+    if (ok) open = false;
+  }
+
+  // Refreshes the cloud projects list once per sign-in (not on every render) — mirrors
+  // initAuthSession's own "one fetch, then react to change notifications" shape, just scoped to
+  // this component instead of App.svelte, since the list is only ever shown here.
+  let lastRefreshedFor: string | null = null;
+  $: if ($authSession && $authSession.user.id !== lastRefreshedFor) {
+    lastRefreshedFor = $authSession.user.id;
+    void refreshCloudProjects();
+  } else if (!$authSession) {
+    lastRefreshedFor = null;
+  }
 </script>
 
 <svelte:window on:keydown={onKeydown} />
@@ -79,7 +111,33 @@
     <div class="panel" role="dialog" aria-label={$authSession ? 'Account' : 'Sign in'} data-testid="account-menu-panel">
       {#if $authSession}
         <p class="signed-in-as">Signed in as<br /><strong>{$authSession.user.email}</strong></p>
-        <button type="button" class="primary" on:click={handleSignOut} data-testid="sign-out-button">Sign out</button>
+
+        <button type="button" class="primary" on:click={handleSave} disabled={$cloudSyncPending} data-testid="save-to-account-button">
+          {#if $cloudSyncPending}Working…{:else if saveConfirmed}Saved ✓{:else}Save this project to your account{/if}
+        </button>
+
+        {#if $cloudSyncError}
+          <p class="error" role="alert">
+            {$cloudSyncError}
+            <button type="button" class="link" on:click={dismissCloudSyncError}>Dismiss</button>
+          </p>
+        {/if}
+
+        {#if $cloudProjects.length > 0}
+          <div class="cloud-projects">
+            <p class="section-label">Your cloud projects</p>
+            <ul>
+              {#each $cloudProjects as ref (ref.id)}
+                <li>
+                  <span>{ref.name}</span>
+                  <button type="button" class="link" on:click={() => handleOpenCloudProject(ref.id)} data-testid="open-cloud-project">Open</button>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        <button type="button" class="secondary" on:click={handleSignOut} data-testid="sign-out-button">Sign out</button>
       {:else}
         <div class="tabs">
           <button type="button" class:active={mode === 'signIn'} on:click={() => switchMode('signIn')}>Sign in</button>
@@ -261,6 +319,66 @@
     outline-offset: 1px;
   }
 
+  .secondary {
+    padding: 7px;
+    background: none;
+    border: 1px solid var(--af-border-subtle);
+    border-radius: var(--af-radius-sm);
+    color: var(--af-ink-secondary);
+    font-weight: 550;
+    cursor: pointer;
+  }
+
+  .secondary:hover {
+    color: var(--af-ink-primary);
+    border-color: var(--af-ink-tertiary);
+  }
+
+  .secondary:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 1px;
+  }
+
+  .cloud-projects {
+    padding-top: 8px;
+    border-top: 1px solid var(--af-border-subtle);
+  }
+
+  .section-label {
+    margin: 0 0 6px;
+    color: var(--af-ink-tertiary);
+    font-weight: 550;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .cloud-projects ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  .cloud-projects li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 0;
+    color: var(--af-ink-primary);
+  }
+
+  .cloud-projects li span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .link {
     align-self: center;
     margin-top: 2px;
@@ -274,8 +392,17 @@
 
   .error {
     margin: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     color: var(--af-warning);
     font-weight: 550;
+  }
+
+  .error .link {
+    flex: 0 0 auto;
+    margin: 0;
   }
 
   .hint {

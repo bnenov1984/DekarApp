@@ -160,4 +160,12 @@ export interface Project {
   readonly workspaceId: string;
   readonly surfaceIds: readonly SurfaceId[];
   readonly reportIds: readonly ReportId[];
+  /** Phase 3 of the SaaS migration (26_ADR/ADR-007) — `undefined` for every project that has
+   * never been pushed to an account (PD-012: local-first, no account required — this is the
+   * literal type-level expression of that). Set once, by the server, on the first successful
+   * `PUT /v1/projects/{id}` (23_API.md §6) that claims ownership for the signed-in user; never
+   * set by any local command. Core/Application never branch on *who* this is (no permission
+   * logic lives here) — it is carried data, the same "domain data, not behavior" discipline as
+   * every other field on this type. */
+  readonly ownerId?: string;
 }
