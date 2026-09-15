@@ -3,6 +3,7 @@ import type { MeasurementId, Surface } from '../../core/domain/entities.js';
 import { removeVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
 import { removeLabelAt, withVertexLabels } from '../vertexLabels.js';
+import { rebalanceSplitGroups } from '../splitGroup.js';
 
 export interface RemoveVertexParams {
   readonly surface: Surface;
@@ -41,7 +42,9 @@ export function removeVertexCommand(params: RemoveVertexParams): Command<Surface
       // same vertex it was labeling.
       const vertexLabels = removeLabelAt(found.measurement.vertexLabels, params.vertexIndex);
       const updated = withVertexLabels({ ...found.measurement, shape: result.value }, vertexLabels);
-      return replaceMeasurement(before, params.measurementId, updated);
+      // PD-021 — see editVertex.ts; removing a vertex changes the part's area, so its Split group
+      // (if any) redistributes to keep summing to the parent's total.
+      return rebalanceSplitGroups(replaceMeasurement(before, params.measurementId, updated), params.measurementId);
     },
     undo: () => before,
     event: { type: 'MeasurementShapeEdited', surfaceId: before.id, measurementId: params.measurementId },

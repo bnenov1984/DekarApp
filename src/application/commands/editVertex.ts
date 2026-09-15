@@ -3,6 +3,7 @@ import type { MeasurementId, Surface } from '../../core/domain/entities.js';
 import type { Point } from '../../core/domain/types.js';
 import { editVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
+import { rebalanceSplitGroups } from '../splitGroup.js';
 
 export interface EditVertexParams {
   readonly surface: Surface;
@@ -27,7 +28,10 @@ export function editVertexCommand(params: EditVertexParams): Command<Surface> {
       // throws on invalid geometry (self-intersection, out-of-range index — 18 §6/23 §2.1);
       // propagates out of do(), so CommandStack never pushes this command.
       const newShape = editVertex(found.measurement.shape, params.vertexIndex, params.newPosition);
-      return replaceMeasurement(before, params.measurementId, { ...found.measurement, shape: newShape });
+      const edited = replaceMeasurement(before, params.measurementId, { ...found.measurement, shape: newShape });
+      // PD-021 — a reshaped part redistributes area within its Split group (splitGroup.ts); a no-op
+      // for anything outside such a group. Undo is unaffected: `before` is restored wholesale.
+      return rebalanceSplitGroups(edited, params.measurementId);
     },
     undo: () => before,
     event: { type: 'MeasurementShapeEdited', surfaceId: before.id, measurementId: params.measurementId },

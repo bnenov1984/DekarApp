@@ -72,11 +72,16 @@ export interface Measurement {
    * frozen absolute number — later geometry edits (drag a vertex, Split's children) recompute
    * the *displayed* area from the shape's live px² area through this same factor, so the number
    * stays proportionally accurate instead of silently going stale the moment the shape's size
-   * visibly changes. The field itself is never touched by geometry-editing commands, so "this
-   * Measurement has a manual area" survives edits — only the number shown for it follows the
-   * shape. Split children (application/commands/splitIntoParts.ts) inherit the parent's factor
-   * verbatim, which is what makes "1200 m² split into 3 equal parts -> ~400/400/400 m²" fall out
-   * automatically from the geometry alone, with no separate distribution math.
+   * visibly changes. For a Measurement outside a Split group the field is never touched by
+   * geometry-editing commands, so "this Measurement has a manual area" survives edits — only the
+   * number shown for it follows the shape.
+   *
+   * Split/Split-into-parts children start from the parent's factor, which is what makes "1200 m²
+   * split into 3 equal parts -> ~400/400/400 m²" fall out of the geometry alone. From there,
+   * **PD-021** keeps the group's areas summing to the parent's: reshaping one part rewrites every
+   * part's factor so the total is conserved (application/splitGroup.ts) rather than each part
+   * drifting independently. At the moment of a split the two rules agree exactly — conservation is
+   * a generalisation of inheritance, not a replacement for it.
    * `undefined` = area is geometry/calibration-derived (existing behavior, unchanged) — this is
    * also the field the UI reads to know whether an area is "manual" or "calculated". */
   readonly manualArea?: { readonly squareMetersPerSquarePixel: number };

@@ -24,7 +24,8 @@ import { setMeasurementLockedCommand } from './setMeasurementLocked.js';
 import { setLabelOffsetCommand } from './setLabelOffset.js';
 import { setManualAreaCommand } from './setManualArea.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
-import { findMeasurement } from '../surfaceOps.js';
+import { childrenOf, findMeasurement } from '../surfaceOps.js';
+import { shoelaceArea } from '../../core/measurement/formulas.js';
 import type { Measurement, Surface } from '../../core/domain/entities.js';
 
 // Round-trip shape required by the task, for every scenario below:
@@ -1029,5 +1030,302 @@ describe('Locked measurement refuses geometry-mutating commands', () => {
     expect(() =>
       duplicateMeasurementsCommand({ surface: initial, measurementIds: ['m1'], newMeasurementIds: ['m1-copy'], dx: 5, dy: 5 }),
     ).not.toThrow();
+  });
+});
+
+// PD-021 — Manual Area след Split: запазена сума (Live Rebalancing). T-INV-15.
+// The parts of a split parcel divide a fixed total: reshaping one part redistributes area between
+// the parts rather than inflating the group's sum. The conserved total is the parent's own area
+// (PD-009 keeps the parent alive and untouched by child edits), so these tests assert the property
+// the user actually cares about — "the parts still add up to the area I typed in" — rather than any
+// particular internal factor value.
+describe('PD-021 — Split group conserves the parent manual area', () => {
+  // 20x10 rectangle = 200 px²; a manual area of 1200 m² makes the parent's factor 6 m²/px².
+  const TOTAL_M2 = 1200;
+
+  function parcel(): Measurement {
+    return {
+      id: 'parcel',
+      shape: {
+        type: 'polygon',
+        vertices: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }],
+      },
+      identity: { name: 'Parcel', color: '#2E7D32' },
+      provenance: 'Manual',
+      locked: false,
+    };
+  }
+
+  function polygonVertices(measurement: Measurement): readonly { x: number; y: number }[] {
+    if (measurement.shape.type !== 'polygon') throw new Error('expected a polygon');
+    return measurement.shape.vertices;
+  }
+
+  /** The area this Measurement actually displays: live geometric px² through its own stored
+   * factor — the same arithmetic the UI's display helper performs, expressed here without
+   * reaching across the layer boundary into it. */
+  function displayedArea(measurement: Measurement): number {
+    return shoelaceArea(polygonVertices(measurement)) * (measurement.manualArea?.squareMetersPerSquarePixel ?? 0);
+  }
+
+  function groupSum(surface: Surface, parentId: string): number {
+    return childrenOf(surface, parentId).reduce((sum, child) => sum + displayedArea(child), 0);
+  }
+
+  /** Index of the vertex at (x, y) — found by coordinate rather than assumed position, so these
+   * tests don't depend on the order the split algorithm happens to emit vertices in. */
+  function vertexIndexAt(measurement: Measurement, x: number, y: number): number {
+    const index = polygonVertices(measurement).findIndex((v) => Math.abs(v.x - x) < 1e-9 && Math.abs(v.y - y) < 1e-9);
+    if (index < 0) throw new Error(`no vertex at (${x}, ${y})`);
+    return index;
+  }
+
+  /** manual area set → split down the middle into two 10x10 halves. */
+  function splitParcel(stack: CommandStack): Surface {
+    const withTotal = stack.execute<Surface>(
+      setManualAreaCommand({ surface: makeTestSurface([parcel()]), measurementId: 'parcel', manualAreaM2: TOTAL_M2 }),
+    );
+    return stack.execute<Surface>(
+      splitCommand({
+        surface: withTotal,
+        parentMeasurementId: 'parcel',
+        splitLine: [{ x: 10, y: -1 }, { x: 10, y: 11 }],
+        childIds: ['partA', 'partB'],
+      }),
+    );
+  }
+
+  it('already sums to the entered total at the moment of the split', () => {
+    const afterSplit = splitParcel(new CommandStack());
+    expect(groupSum(afterSplit, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+  });
+
+  it('still sums to the entered total after a child vertex edit moves the dividing boundary', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+
+    // Drag partA's two boundary vertices from x=10 out to x=14: partA grows, partB is untouched,
+    // so the group's *geometric* area no longer equals the parent's. The displayed areas must
+    // still divide the same 1200 m².
+    const partA = findMeasurement(afterSplit, 'partA')!.measurement;
+    const afterFirst = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'partA',
+        vertexIndex: vertexIndexAt(partA, 10, 0),
+        newPosition: { x: 14, y: 0 },
+      }),
+    );
+    const afterSecond = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterFirst,
+        measurementId: 'partA',
+        vertexIndex: vertexIndexAt(findMeasurement(afterFirst, 'partA')!.measurement, 10, 10),
+        newPosition: { x: 14, y: 10 },
+      }),
+    );
+
+    expect(groupSum(afterSecond, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+
+    // and the redistribution went the way the geometry says it should — whichever part is now
+    // geometrically larger holds the larger share of the total (which part the split algorithm
+    // named 'partA' is its own business, so this asserts the property, not the naming)
+    const [smaller, larger] = [findMeasurement(afterSecond, 'partA')!.measurement, findMeasurement(afterSecond, 'partB')!.measurement].sort(
+      (a, b) => shoelaceArea(polygonVertices(a)) - shoelaceArea(polygonVertices(b)),
+    );
+    expect(displayedArea(larger!)).toBeGreaterThan(displayedArea(smaller!));
+  });
+
+  it('leaves the parent parcel own area untouched while its parts are reshaped', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+    const parentBefore = findMeasurement(afterSplit, 'parcel')!.measurement;
+
+    const partA = findMeasurement(afterSplit, 'partA')!.measurement;
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'partA',
+        vertexIndex: vertexIndexAt(partA, 10, 0),
+        newPosition: { x: 14, y: 0 },
+      }),
+    );
+
+    expect(findMeasurement(edited, 'parcel')!.measurement).toEqual(parentBefore);
+    expect(displayedArea(findMeasurement(edited, 'parcel')!.measurement)).toBeCloseTo(TOTAL_M2, 6);
+  });
+
+  it('conserves the total across an N-way Split-into-parts too', () => {
+    const stack = new CommandStack();
+    const withTotal = stack.execute<Surface>(
+      setManualAreaCommand({ surface: makeTestSurface([parcel()]), measurementId: 'parcel', manualAreaM2: TOTAL_M2 }),
+    );
+    const afterSplit = stack.execute<Surface>(
+      splitIntoPartsCommand({
+        surface: withTotal,
+        parentMeasurementId: 'parcel',
+        childShapes: [
+          { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 10 }, { x: 0, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 6, y: 0 }, { x: 13, y: 0 }, { x: 13, y: 10 }, { x: 6, y: 10 }] },
+          { type: 'polygon', vertices: [{ x: 13, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 13, y: 10 }] },
+        ],
+        childIds: ['p1', 'p2', 'p3'],
+      }),
+    );
+
+    const p2 = findMeasurement(afterSplit, 'p2')!.measurement;
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'p2',
+        vertexIndex: vertexIndexAt(p2, 13, 0),
+        newPosition: { x: 17, y: 0 },
+      }),
+    );
+
+    expect(groupSum(edited, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+  });
+
+  it('rebalances on vertex insertion and on vertex removal, not just on a drag', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+
+    const added = stack.execute<Surface>(
+      addVertexCommand({ surface: afterSplit, measurementId: 'partA', edgeIndex: 0, position: { x: 5, y: -4 } }),
+    );
+    expect(groupSum(added, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+
+    const removed = stack.execute<Surface>(
+      removeVertexCommand({ surface: added, measurementId: 'partA', vertexIndex: 1 }),
+    );
+    expect(groupSum(removed, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+  });
+
+  it('does not drift across many successive edits', () => {
+    const stack = new CommandStack();
+    let surface = splitParcel(stack);
+
+    for (const x of [12, 14, 16, 9, 11, 13]) {
+      const partA = findMeasurement(surface, 'partA')!.measurement;
+      const index = polygonVertices(partA).findIndex((v) => v.y === 0 && v.x > 5);
+      surface = stack.execute<Surface>(
+        editVertexCommand({ surface, measurementId: 'partA', vertexIndex: index, newPosition: { x, y: 0 } }),
+      );
+      expect(groupSum(surface, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+    }
+  });
+
+  it('undo restores every part area exactly, and redo puts the rebalanced areas back', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+    const partA = findMeasurement(afterSplit, 'partA')!.measurement;
+
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'partA',
+        vertexIndex: vertexIndexAt(partA, 10, 0),
+        newPosition: { x: 14, y: 0 },
+      }),
+    );
+
+    // whole-Surface snapshot: the sibling's rebalanced factor is restored with everything else
+    expect(stack.undo<Surface>()).toEqual(afterSplit);
+    expect(stack.redo<Surface>()).toEqual(edited);
+  });
+
+  it('conserves at both levels when a part is itself split', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+
+    // partA (10x10, 600 m²) split again down its own middle — line derived from partA's actual
+    // bounds rather than assuming which half of the parcel the split algorithm made it
+    const xs = polygonVertices(findMeasurement(afterSplit, 'partA')!.measurement).map((v) => v.x);
+    const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const nested = stack.execute<Surface>(
+      splitCommand({
+        surface: afterSplit,
+        parentMeasurementId: 'partA',
+        splitLine: [{ x: midX, y: -1 }, { x: midX, y: 11 }],
+        childIds: ['a1', 'a2'],
+      }),
+    );
+    expect(groupSum(nested, 'partA')).toBeCloseTo(displayedArea(findMeasurement(nested, 'partA')!.measurement), 6);
+
+    // reshaping a sub-part conserves partA's area and leaves the outer group alone
+    const a1 = findMeasurement(nested, 'a1')!.measurement;
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: nested,
+        measurementId: 'a1',
+        vertexIndex: vertexIndexAt(a1, midX, 0),
+        newPosition: { x: midX + 2, y: 0 },
+      }),
+    );
+    expect(groupSum(edited, 'partA')).toBeCloseTo(600, 6);
+    expect(groupSum(edited, 'parcel')).toBeCloseTo(TOTAL_M2, 6);
+  });
+
+  it('rebalances the parts when the parent parcel itself is reshaped', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+    const parentM = findMeasurement(afterSplit, 'parcel')!.measurement;
+
+    // shrink the parent: its own manual-area factor is untouched, so its displayed total drops,
+    // and the parts must divide the new total
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'parcel',
+        vertexIndex: vertexIndexAt(parentM, 20, 0),
+        newPosition: { x: 16, y: 0 },
+      }),
+    );
+
+    const newTotal = displayedArea(findMeasurement(edited, 'parcel')!.measurement);
+    expect(newTotal).toBeLessThan(TOTAL_M2);
+    expect(groupSum(edited, 'parcel')).toBeCloseTo(newTotal, 6);
+  });
+
+  it('leaves measurements without a manual area completely alone', () => {
+    const stack = new CommandStack();
+    const initial = makeTestSurface([parcel()]);
+    const afterSplit = stack.execute<Surface>(
+      splitCommand({
+        surface: initial,
+        parentMeasurementId: 'parcel',
+        splitLine: [{ x: 10, y: -1 }, { x: 10, y: 11 }],
+        childIds: ['partA', 'partB'],
+      }),
+    );
+
+    const partA = findMeasurement(afterSplit, 'partA')!.measurement;
+    const edited = stack.execute<Surface>(
+      editVertexCommand({
+        surface: afterSplit,
+        measurementId: 'partA',
+        vertexIndex: vertexIndexAt(partA, 10, 0),
+        newPosition: { x: 14, y: 0 },
+      }),
+    );
+
+    for (const id of ['parcel', 'partA', 'partB']) {
+      expect(findMeasurement(edited, id)!.measurement.manualArea).toBeUndefined();
+    }
+  });
+
+  it('deleting a part dissolves the group rather than inflating the survivor', () => {
+    const stack = new CommandStack();
+    const afterSplit = splitParcel(stack);
+    const partBBefore = findMeasurement(afterSplit, 'partB')!.measurement;
+
+    const afterDelete = stack.execute<Surface>(
+      deleteMeasurementsCommand({ surface: afterSplit, measurementIds: ['partA'] }),
+    );
+
+    // 11 §4 — the survivor loses parentId and keeps its own area; it is not grown to cover the gap
+    const partBAfter = findMeasurement(afterDelete, 'partB')!.measurement;
+    expect(partBAfter.parentId).toBeUndefined();
+    expect(displayedArea(partBAfter)).toBeCloseTo(displayedArea(partBBefore), 6);
   });
 });
