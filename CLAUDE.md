@@ -84,3 +84,21 @@ something to silently resolve in either direction.
 This file and `docs/INDEX.md` are a **routing layer only**. They do not contain product
 requirements, architecture decisions, or UX specifications themselves — those stay exactly where
 they already live. Do not duplicate doc content back into this file as it grows; add a pointer.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as markdown files under `.scratch/<feature-slug>/`, not GitHub Issues. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
+`wontfix`), recorded as a `Status:` line in each issue file. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context, but not the generic `CONTEXT.md`/`docs/adr/` convention — points at this repo's
+existing corpus (`docs/INDEX.md`, `docs/14_DOMAIN_MODEL.md`, `docs/26_ADR/`) and its authority
+tiers instead. See `docs/agents/domain.md`.
