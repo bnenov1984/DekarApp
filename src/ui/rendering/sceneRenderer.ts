@@ -97,12 +97,14 @@ export interface ContainRect {
   readonly height: number;
 }
 
-/** "object-fit: contain" math for the imported-image background (18/19 — Surface-space ==
- * CSS-pixel-space simplification, ISS-010: no pan/zoom exists yet, so the whole image is scaled
- * to fit the current viewport rather than shown at native resolution with scrolling). Returns a
- * degenerate all-zero rect for any non-positive input rather than dividing by zero/NaN, since a
- * still-loading or zero-size container is a real, reachable state (resize observer fires before
- * the image decode resolves, or vice versa). */
+/** "object-fit: contain" math (18/19). No longer `effectiveImageRect`'s (imageResizeSession.ts)
+ * live per-resize default — that was ISS-010's "shape drifts off the plan on resize" bug, since it
+ * re-fit the image to the container's current box size independently of the fixed Surface-space
+ * coordinates every Shape uses. Kept as `drawBackgroundImage`'s defensive fallback below (never hit
+ * once a rect is resolved from `effectiveImageRect`) and as generically useful "contain" math.
+ * Returns a degenerate all-zero rect for any non-positive input rather than dividing by zero/NaN,
+ * since a still-loading or zero-size container is a real, reachable state (resize observer fires
+ * before the image decode resolves, or vice versa). */
 export function computeContainRect(
   imageWidth: number,
   imageHeight: number,
@@ -278,21 +280,35 @@ export function resizeHandlePoints(shape: Shape): readonly Point[] | null {
   }
 }
 
-const VERTEX_HANDLE_SIZE = 4;
+const VERTEX_HANDLE_RADIUS_SCREEN_PX = 3;
 
-/** Small filled squares (white-ringed for contrast over any fill color) at every vertex/corner/
+/** World-space radius that renders as a constant `VERTEX_HANDLE_RADIUS_SCREEN_PX` on screen
+ * regardless of the current viewport zoom (ISS-010-adjacent bug: handles used to be a fixed
+ * world-space size, so `applyCtxTransform`'s zoom scale blew them up at zoom-in, defeating fine
+ * placement). Same "divide a screen-px constant by scale" pattern CanvasStage.svelte already uses
+ * for hit-test tolerance (`HANDLE_HIT_TOLERANCE_SCREEN_PX`). Exported and pure so it's unit-testable
+ * independently of the CanvasRenderingContext2D draw call (see sceneRenderer.test.ts's note on why
+ * the rest of this module isn't unit-tested). */
+export function vertexHandleRadius(scale: number): number {
+  return VERTEX_HANDLE_RADIUS_SCREEN_PX / scale;
+}
+
+/** Small filled circles (white-ringed for contrast over any fill color) at every vertex/corner/
  * radius handle — the "vertex-editing: върхове като дръжки" state from 16 §3.1 MeasurementShape,
- * extended to Rectangle corners and Circle's radius handle. */
-export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, accentColor: string): void {
+ * extended to Rectangle corners and Circle's radius handle. `scale` is the current viewport zoom
+ * (CanvasStage.svelte's `$viewport.scale`) — required so the handle stays a constant on-screen
+ * size instead of scaling with the shape. */
+export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, accentColor: string, scale: number): void {
   const points = resizeHandlePoints(shape);
   if (!points) return;
+  const radius = vertexHandleRadius(scale);
   ctx.save();
   ctx.fillStyle = accentColor;
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 1.5;
   for (const p of points) {
     ctx.beginPath();
-    ctx.rect(p.x - VERTEX_HANDLE_SIZE, p.y - VERTEX_HANDLE_SIZE, VERTEX_HANDLE_SIZE * 2, VERTEX_HANDLE_SIZE * 2);
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -302,7 +318,7 @@ export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, a
 /** Live vertex-move/edge-insert drag preview — same dashed-ghost language as `drawInProgress`/
  * `drawCalibrationLine` (18 §6 / 15 W5 "one mental model for everything unconfirmed"), outline
  * only so the real (still-current) Measurement fill stays visible underneath while dragging. */
-export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string): void {
+export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string, scale: number): void {
   ctx.save();
   ctx.setLineDash([5, 4]);
   ctx.lineWidth = 2;
@@ -311,7 +327,7 @@ export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShap
   pathForShape(ctx, previewShape);
   ctx.stroke();
   ctx.restore();
-  drawVertexHandles(ctx, previewShape, accentColor);
+  drawVertexHandles(ctx, previewShape, accentColor, scale);
 }
 
 /** docs/18_DRAWING_ENGINE.md §5 (PD-009) / 15 W5-style ghost — the Split line plus, once it

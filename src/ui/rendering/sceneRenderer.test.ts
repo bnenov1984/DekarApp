@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeContainRect } from './sceneRenderer.js';
+import { computeContainRect, vertexHandleRadius } from './sceneRenderer.js';
 
 // sceneRenderer.ts as a whole draws to a real CanvasRenderingContext2D (a browser-only API not
 // available under this project's node-based vitest run, same boundary as every other Canvas2D
-// call in this file — verified live in the browser instead, ADR-002). computeContainRect is the
-// one piece of pure math in the module, so it's the one piece with a unit test.
+// call in this file — verified live in the browser instead, ADR-002). computeContainRect and
+// vertexHandleRadius are the pure math extracted out of that boundary, so they're what's covered.
 
 describe('computeContainRect', () => {
   it('scales a wider-than-box image down to fit the box width, centering vertically', () => {
@@ -28,5 +28,20 @@ describe('computeContainRect', () => {
 
   it('returns a degenerate all-zero rect for a zero-size image', () => {
     expect(computeContainRect(0, 0, 400, 200)).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+});
+
+describe('vertexHandleRadius', () => {
+  it('renders at a constant screen size at 100% zoom', () => {
+    expect(vertexHandleRadius(1)).toBe(3);
+  });
+
+  it('shrinks in world units as the viewport zooms in, so the on-screen size stays constant', () => {
+    expect(vertexHandleRadius(2)).toBe(1.5);
+    expect(vertexHandleRadius(4)).toBe(0.75);
+  });
+
+  it('grows in world units as the viewport zooms out, so the on-screen size stays constant', () => {
+    expect(vertexHandleRadius(0.5)).toBe(6);
   });
 });

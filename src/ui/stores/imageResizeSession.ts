@@ -2,7 +2,6 @@ import { writable, get } from 'svelte/store';
 import type { Point } from '../../core/domain/types.js';
 import type { RectangleCorner } from '../../core/drawing/drawingEngine.js';
 import { findRectangleCornerAt } from '../../core/drawing/hitTest.js';
-import { computeContainRect } from '../rendering/sceneRenderer.js';
 import { resizeImage } from './studioSession.js';
 import type { Surface } from '../../core/domain/entities.js';
 
@@ -77,20 +76,23 @@ export function resizeRectAspectLocked(
 }
 
 /** The rect actually drawn today — `Surface.imageRect` once the user has resized/moved it, else
- * the "contain"-fit default. Returns `null` for a not-yet-decoded/zero-size image (nothing to hit
- * or draw yet). CanvasStage passes the live bitmap dimensions in since neither the bitmap nor the
- * container size live on the Surface aggregate. */
-export function effectiveImageRect(
-  surface: Surface,
-  bitmapWidth: number,
-  bitmapHeight: number,
-  boxWidth: number,
-  boxHeight: number,
-): ImageRect | null {
+ * the image's own native bitmap size at the Surface origin. Returns `null` for a not-yet-decoded/
+ * zero-size image (nothing to hit or draw yet). CanvasStage passes the live bitmap dimensions in
+ * since they don't live on the Surface aggregate.
+ *
+ * ISS-010 fix: this used to fall back to a "contain"-fit against the *live container box size*
+ * (`computeContainRect`, sceneRenderer.ts), recomputed on every resize — while Shape vertices are
+ * fixed Surface-space coordinates that never move on resize. The two drifted apart on every
+ * window resize (image rescaled/repositioned to the new box, shapes didn't), which is exactly the
+ * "shape drifts off the plan on resize" bug. The default rect is now a fixed Surface-space value,
+ * just like a Shape's — stable across resize, exactly like every other Shape drawn on top of it.
+ * Making a freshly imported image visible at a sensible zoom is the viewport's job now
+ * (`fitBounds`/`fitToContent`, CanvasStage.svelte), not this function's — see its "auto-fit once
+ * per new bitmap" reactive block. */
+export function effectiveImageRect(surface: Surface, bitmapWidth: number, bitmapHeight: number): ImageRect | null {
   if (surface.imageRect) return surface.imageRect;
-  const rect = computeContainRect(bitmapWidth, bitmapHeight, boxWidth, boxHeight);
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  return { origin: { x: rect.x, y: rect.y }, width: rect.width, height: rect.height };
+  if (bitmapWidth <= 0 || bitmapHeight <= 0) return null;
+  return { origin: { x: 0, y: 0 }, width: bitmapWidth, height: bitmapHeight };
 }
 
 /** Live preview while a resize/move drag is in progress — CanvasStage reads this (falling back

@@ -162,7 +162,7 @@
   // handles for. `undefined`/`true` both mean locked (the safe default — entities.ts).
   $: currentImageRect =
     $activeSurface?.kind === 'image' && $backgroundImage
-      ? effectiveImageRect($activeSurface, $backgroundImage.width, $backgroundImage.height, widthCss, heightCss)
+      ? effectiveImageRect($activeSurface, $backgroundImage.width, $backgroundImage.height)
       : null;
   $: imageAspectRatio = $backgroundImage ? $backgroundImage.width / $backgroundImage.height : 1;
 
@@ -203,6 +203,18 @@
   }
 
   $: if ($fitToContentRequested) fitToContent();
+
+  // ISS-010 fix: `effectiveImageRect`'s default is now the image's fixed native-bitmap-size
+  // Surface-space rect (imageResizeSession.ts), no longer re-derived from the live container box
+  // size on every resize — so nothing else brings a freshly imported, possibly multi-megapixel
+  // image into view at a sensible zoom. Fit once per newly-decoded bitmap (identity-guarded, same
+  // "once per change, not every redraw" shape as AccountMenu.svelte's `lastRefreshedFor`) rather
+  // than on every resize, which would fight the user's own subsequent pan/zoom.
+  let lastFitBitmap: ImageBitmap | null = null;
+  $: if ($backgroundImage && $backgroundImage !== lastFitBitmap && widthCss > 0 && heightCss > 0) {
+    lastFitBitmap = $backgroundImage;
+    fitToContent();
+  }
   // PO follow-up (UX review, item B4 "empty-canvas ghost hint") — a first-time "Blank canvas"
   // session drops the user into a silent, totally empty stage with nothing communicating "pick a
   // tool below and draw" (the 5-second first-impression test failed here in the review). Gated on
@@ -256,9 +268,9 @@
       const editing = surface.layers.flatMap((l) => l.measurements).find((m) => m.id === $selectedMeasurementId);
       if (editing && !editing.locked) {
         if ($vertexDrag) {
-          drawVertexEditPreview(ctx, $vertexDrag.previewShape, readAccentColor());
+          drawVertexEditPreview(ctx, $vertexDrag.previewShape, readAccentColor(), $viewport.scale);
         } else {
-          drawVertexHandles(ctx, editing.shape, readAccentColor());
+          drawVertexHandles(ctx, editing.shape, readAccentColor(), $viewport.scale);
         }
       }
     }
@@ -271,9 +283,9 @@
     }
     if (canResizeImage) {
       if ($imageResizeDrag) {
-        drawVertexEditPreview(ctx, toRectangleShape($imageResizeDrag), readAccentColor());
+        drawVertexEditPreview(ctx, toRectangleShape($imageResizeDrag), readAccentColor(), $viewport.scale);
       } else if (currentImageRect) {
-        drawVertexHandles(ctx, toRectangleShape(currentImageRect), readAccentColor());
+        drawVertexHandles(ctx, toRectangleShape(currentImageRect), readAccentColor(), $viewport.scale);
       }
     } else if ($backgroundSelected && currentImageRect) {
       // Selected but not (yet) interactive — locked, or a drawing/calibration/vertex-edit/split

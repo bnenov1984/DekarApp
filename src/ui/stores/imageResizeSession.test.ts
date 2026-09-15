@@ -30,18 +30,20 @@ function imageSurface(): Surface {
 }
 
 describe('effectiveImageRect', () => {
-  it('falls back to the contain-fit default when Surface.imageRect is unset', () => {
-    const rect = effectiveImageRect(imageSurface(), 400, 200, 100, 100);
-    expect(rect).toEqual({ origin: { x: 0, y: 25 }, width: 100, height: 50 });
+  it('falls back to the image\'s native bitmap size at the Surface origin when Surface.imageRect is unset', () => {
+    // ISS-010 fix: this default is a fixed Surface-space rect (like a Shape's), independent of
+    // container size — it no longer takes box dimensions at all.
+    const rect = effectiveImageRect(imageSurface(), 400, 200);
+    expect(rect).toEqual({ origin: { x: 0, y: 0 }, width: 400, height: 200 });
   });
 
-  it('returns the explicit imageRect once the Surface has one, ignoring bitmap/box size', () => {
+  it('returns the explicit imageRect once the Surface has one, ignoring bitmap size', () => {
     const surface: Surface = { ...imageSurface(), imageRect: { origin: { x: 5, y: 5 }, width: 40, height: 30 } };
-    expect(effectiveImageRect(surface, 999, 999, 999, 999)).toEqual({ origin: { x: 5, y: 5 }, width: 40, height: 30 });
+    expect(effectiveImageRect(surface, 999, 999)).toEqual({ origin: { x: 5, y: 5 }, width: 40, height: 30 });
   });
 
-  it('returns null for a degenerate (zero-size) contain-fit result', () => {
-    expect(effectiveImageRect(imageSurface(), 0, 0, 100, 100)).toBeNull();
+  it('returns null for a not-yet-decoded/zero-size bitmap', () => {
+    expect(effectiveImageRect(imageSurface(), 0, 0)).toBeNull();
   });
 });
 

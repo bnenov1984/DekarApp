@@ -118,12 +118,13 @@ export interface Surface {
   readonly calibration: Calibration;
   readonly layers: readonly Layer[];
   /** PO request (resizable imported image) — only meaningful when `kind === 'image'`. Undefined
-   * until the user first resizes it, at which point CanvasStage's "contain"-fit default
-   * (`computeContainRect`, sceneRenderer.ts) stops applying and this becomes the explicit,
-   * persisted rect (Surface-space == CSS-pixel-space, ISS-010). Deliberately shaped like a
-   * Rectangle Measurement's geometry (rotation fixed at 0, same as Rectangle's own current scope
-   * line) so the already-tested `resizeRectangleCorner`/`findRectangleCornerAt` apply unchanged
-   * rather than duplicating that math for a second shape kind. */
+   * until the user first resizes it, at which point `effectiveImageRect`'s (imageResizeSession.ts)
+   * native-bitmap-size default stops applying and this becomes the explicit, persisted rect — a
+   * fixed Surface-space value either way (ISS-010 fix: no longer re-derived from the live
+   * container box size). Deliberately shaped like a Rectangle Measurement's geometry (rotation
+   * fixed at 0, same as Rectangle's own current scope line) so the already-tested
+   * `resizeRectangleCorner`/`findRectangleCornerAt` apply unchanged rather than duplicating that
+   * math for a second shape kind. */
   readonly imageRect?: { readonly origin: Point; readonly width: number; readonly height: number };
   /** PO request (lockable Background layer, Photoshop-style) — `undefined` and `true` both mean
    * locked (locked is the safe default: a freshly-imported image is locked until the user
