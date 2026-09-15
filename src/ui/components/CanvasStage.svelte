@@ -3,9 +3,13 @@
   // (ADR-002); actual draw calls live in rendering/sceneRenderer.ts (a pure, testable module),
   // this component only wires DPI-aware sizing + redraw triggers + click hit-testing to it.
   //
-  // Surface space == CSS-pixel canvas space for now (no pan/zoom/calibration-to-screen mapping
-  // yet — that's a disclosed, later concern; nothing in 21 §6 requires it to exist before shapes
-  // can render and be selected).
+  // Surface space is NOT CSS-pixel canvas space (it was, before pan/zoom existed — ISS-010). The
+  // mapping is `viewport/viewport.ts` (`screen = world * scale + offset`), applied to both canvases
+  // by `applyCtxTransform` and inverted by `screenToWorld` for pointer input. Anything that must
+  // keep a constant *screen* size while the viewport zooms — a handle radius, a hit tolerance —
+  // divides its screen-pixel constant by `$viewport.scale` rather than assuming the two spaces are
+  // the same; anything anchored in the scene (shape geometry, the background image's rect) stays in
+  // Surface space and is never re-derived from the container's size.
   import { onDestroy, onMount, tick } from 'svelte';
   import {
     activeSurface,
