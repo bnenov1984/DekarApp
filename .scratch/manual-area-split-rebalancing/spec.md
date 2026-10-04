@@ -1,6 +1,6 @@
 # Manual Area after Split — conserved-sum rebalancing (PD-021)
 
-Status: ready-for-agent
+Status: resolved
 Product Decision: PD-021 (docs/05_PRODUCT_DECISIONS.md, approved 2026-09-15)
 Raised by: hands-on testing, 2026-09-15
 
@@ -239,3 +239,12 @@ is incomplete.
 - **Why this wasn't caught earlier.** No test covered the combination "manual area → split → edit a
   child". The individual pieces were each well covered in isolation, which is exactly why the gap
   survived — worth remembering when choosing the test cases above.
+
+## Comments
+
+**2026-10-04 — resolved.** Implemented in `2a3df24` (`feat(application): conserve manual area
+across a Split group (PD-021)`): the derived-group helper `src/application/splitGroup.ts`, invoked
+by the edit-vertex, add-vertex and remove-vertex commands, with `splitGroup.test.ts` and new
+round-trip cases in `commands/roundtrip.test.ts`. INV-15 was rewritten for the derived group in
+`b10ebe3`. Still open for the PO, as noted under Further Notes: whether deleting a part should
+redistribute its area across the survivors — today it deliberately does not.
