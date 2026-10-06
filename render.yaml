@@ -1,0 +1,22 @@
+# Render Blueprint for the AreaFlow SPA — docs/26_ADR/ADR-008-frontend-hosting.md.
+# A static site: Render builds it on every push to main and serves dist-ui/ from its CDN.
+# The areaflow-api backend (ADR-007) is a separate Render service in its own repo.
+services:
+  - type: web
+    runtime: static
+    name: areaflow
+    branch: main
+    # Deploy only commits whose GitHub checks (.github/workflows/ci.yml) passed.
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist-ui
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
