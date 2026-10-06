@@ -6,7 +6,8 @@ import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 // so dev server and test runner share one bundler config, not two toolchains.
 export default defineConfig({
   root: 'src/ui',
-  base: '/areaflow/',
+  // Served from the site root on Render (docs/26_ADR/ADR-008).
+  base: '/',
   // preprocess passed explicitly (not auto-discovered from svelte.config.js) because `root:
   // 'src/ui'` above shifts vite-plugin-svelte's config-file resolution away from the actual
   // project root, where svelte.config.js lives.
