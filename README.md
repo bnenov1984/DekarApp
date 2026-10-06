@@ -14,7 +14,7 @@ Requires Node 24.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5174/areaflow/
+npm run dev        # http://localhost:5174/
 ```
 
 The account features need `areaflow-api` running on `http://localhost:8787` (override with
@@ -27,10 +27,15 @@ The account features need `areaflow-api` running on `http://localhost:8787` (ove
 | `npm run lint` | ESLint, including the layer-boundary rules |
 | `npm run typecheck` / `typecheck:svelte` | `tsc` and `svelte-check` |
 | `npm run build` | Production build into `dist-ui/` |
-| `npm run deploy` | Build and publish `dist-ui/` to the `gh-pages` branch |
 
 CI (`.github/workflows/ci.yml`) runs lint, both type checks, tests and the build on every push to
 `main` and every pull request.
+
+## Deployment
+
+The app is hosted as a Render static site, configured in [`render.yaml`](render.yaml)
+(ADR-008). Every push to `main` deploys automatically once CI passes. The live site works fully
+without the backend; sign-in and "Save to account" need `areaflow-api` deployed as well.
 
 ## Code layout
 
