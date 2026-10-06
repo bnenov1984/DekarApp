@@ -21,7 +21,8 @@ something is an already-settled decision, an explicitly parked idea, or genuinel
   log; check here first for whether your task is already decided, PARKED, or open).
 - **Supporting:** [08_PERSONAS.md](08_PERSONAS.md), [09_USER_JOURNEYS.md](09_USER_JOURNEYS.md),
   [10_USER_STORIES.md](10_USER_STORIES.md) — who the decision serves and why, for tie-breaking
-  between competing designs (08's own priority rule: P1 wins over P2 unless P2 is harmed).
+  between competing designs (08's own priority rule, revised by PD-022: P2 wins unless P1 is
+  harmed — simplicity stays the method).
 - **Consult if relevant:** [07_COMPETITIVE_ANALYSIS.md](07_COMPETITIVE_ANALYSIS.md) — pattern
   precedent (P1–P16) when a UX choice needs justification against how other tools solved it.
 
