@@ -209,3 +209,8 @@ vertices.
 (1) only polygon/curve/freehand take part (rectangles, circles and lines are excluded); (2) curves
 take part in move and delete only, and shared-edge insertion applies only between polygon and
 freehand edges; (3) at outer corners, selection prefers the part over the parent.
+
+**2026-10-10 — planning.** Split into tickets `issues/01`–`06`. Two more decisions: when deleting a
+part dissolves its group (`dissolveSplitGroup`), the survivors become ordinary shapes and **do**
+link to the former parent (PO); when the Split's T-junction neighbour is locked, the vertex
+insertion is skipped rather than refusing the Split (ticket 05).
