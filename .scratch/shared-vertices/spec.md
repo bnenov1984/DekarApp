@@ -1,6 +1,6 @@
 # Shared vertices — topological editing of coincident points (PD-024)
 
-Status: ready-for-agent
+Status: resolved
 Product Decision: PD-024 (docs/05_PRODUCT_DECISIONS.md, approved 2026-10-10)
 Invariant: INV-19 (docs/14_DOMAIN_MODEL.md §4), test row T-INV-19 (docs/22_TDD.md §3)
 Engine spec: docs/18_DRAWING_ENGINE.md §5 (T-junctions), §6.1 (topological editing)
@@ -214,3 +214,26 @@ freehand edges; (3) at outer corners, selection prefers the part over the parent
 part dissolves its group (`dissolveSplitGroup`), the survivors become ordinary shapes and **do**
 link to the former parent (PO); when the Split's T-junction neighbour is locked, the vertex
 insertion is skipped rather than refusing the Split (ticket 05).
+
+**2026-10-10 — resolved.** Implemented through tickets 01–06:
+
+- 01 link finder: `d912e0a` (+ `3fc3820`)
+- 02 linked move: `d58f607` (+ `20de2bf`)
+- 03 linked insert: `554e699` (+ `318b3b6`)
+- 04 linked delete: `73cdbad` (+ `22e424b`)
+- 05 Split closes T-junctions: `5a9bd8d` (+ `3b30c98`)
+- 06 close-out docs: 22_TDD T-INV-19 lists the real tests; 18 §5 states the locked-neighbour skip
+  and covers split-into-parts; 18 §6.1 gains the dissolved-group rule and the exact snap behaviour.
+
+Found along the way:
+- Fixed: a still Alt+click deleted nothing (`1e7e02d`). This dates from the selection/drag
+  unification, not from PD-024.
+- **Open — code deviates from PD-024 §4.** "When several points coincide, the selected
+  measurement wins" isn't implemented. CanvasStage's mousedown reselects the topmost hit
+  (`findMeasurementAt`) before any drag starts, so pressing a shared vertex of the selected shape
+  switches the selection to whichever coincident shape is on top. A linked move gives the same
+  result either way, but Ctrl/⌘+drag (and Ctrl/⌘+Alt+click) then acts on the topmost shape, not the
+  selected one. Part-over-parent holds only because parts are appended after their parent. Needs
+  its own ticket. Not fixed here.
+- Not changed: the parent's area label sits at its centroid, which for a two-way split is the middle
+  of the shared boundary, so a press there grabs the label instead of the edge (ticket 03).

@@ -1,6 +1,6 @@
 # 06 — Close-out (docs)
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03, 04, 05
 
@@ -12,3 +12,8 @@ Blocked by: 03, 04, 05
 - `../spec.md`: `Status: resolved` + a Comments entry listing the implementing commits.
 
 ## Comments
+
+**2026-10-10 — resolved.** Docs updated in this commit. Also corrected 18 §6.1's snap sentence
+to match the implementation: the participants' shapes are excluded entirely, not only their linked
+vertices. The PD-024 §4 hit-test deviation is recorded in the spec's Comments as an open item; 18
+§6.1 still states the decided rule.
