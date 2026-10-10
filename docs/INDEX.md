@@ -17,7 +17,7 @@ you need to justify a judgment call.
 something is an already-settled decision, an explicitly parked idea, or genuinely undecided.
 
 - **Authoritative:** [PRODUCT_BIBLE.md](PRODUCT_BIBLE.md) (frozen concept/principles/guardrails),
-  [05_PRODUCT_DECISIONS.md](05_PRODUCT_DECISIONS.md) (PD-001…023 — the living, append-only "what"
+  [05_PRODUCT_DECISIONS.md](05_PRODUCT_DECISIONS.md) (PD-001…024 — the living, append-only "what"
   log; check here first for whether your task is already decided, PARKED, or open).
 - **Supporting:** [08_PERSONAS.md](08_PERSONAS.md), [09_USER_JOURNEYS.md](09_USER_JOURNEYS.md),
   [10_USER_STORIES.md](10_USER_STORIES.md) — who the decision serves and why, for tie-breaking
@@ -32,7 +32,7 @@ something is an already-settled decision, an explicitly parked idea, or genuinel
 boundaries, or domain events.
 
 - **Authoritative:** [14_DOMAIN_MODEL.md](14_DOMAIN_MODEL.md) — bounded contexts, aggregates
-  (Surface is root, not Project), entities vs. value objects, INV-1…18, domain event vocabulary.
+  (Surface is root, not Project), entities vs. value objects, INV-1…19, domain event vocabulary.
 - **Supporting:** [11_INFORMATION_ARCHITECTURE.md](11_INFORMATION_ARCHITECTURE.md) — the
   pre-domain object structure 14 was translated from; useful when a domain question is really an
   IA question in disguise.
