@@ -54,6 +54,7 @@
     vertexDrag,
     cancelDrag,
     pointerDown as vertexPointerDown,
+    deleteVertexAt,
     pointerMove as vertexPointerMove,
     pointerUp as vertexPointerUp,
   } from '../stores/vertexEditSession.js';
@@ -420,6 +421,9 @@
     readonly startClientX: number;
     readonly startClientY: number;
     readonly startSurfacePoint: Point;
+    /** Selected before this mousedown, so its handles were visible — a still Alt+click only
+     * deletes a vertex the user could see (onMouseUp). */
+    readonly wasSelected: boolean;
     started: boolean;
   } | null = null;
 
@@ -517,6 +521,7 @@
       // threshold, whether a real drag (move/resize/vertex-edit) starts. Shift-clicking an already-
       // selected shape OUT of a multi-selection must not then let a drag move it — only arm
       // `pendingShapeDrag` when the shape ends up selected after this mousedown.
+      const wasSelected = $selectedMeasurementIds.has(hitId);
       let nowSelected: boolean;
       if (event.shiftKey) {
         toggleMeasurementSelection(hitId);
@@ -531,6 +536,7 @@
           startClientX: event.clientX,
           startClientY: event.clientY,
           startSurfacePoint: point,
+          wasSelected,
           started: false,
         };
       }
@@ -620,7 +626,14 @@
       return;
     }
     if (pendingShapeDrag) {
-      if (pendingShapeDrag.started) vertexPointerUp();
+      if (pendingShapeDrag.started) {
+        vertexPointerUp();
+      } else if (event.altKey && pendingShapeDrag.wasSelected) {
+        // Alt+click deletes a vertex (15 §13) — a click that never crossed the drag threshold
+        // never reached vertexPointerDown, whose Alt branch only covers Alt+drag.
+        const modifiers = { shiftKey: event.shiftKey, altKey: true, ctrlKey: event.ctrlKey, metaKey: event.metaKey };
+        deleteVertexAt(pendingShapeDrag.startSurfacePoint, modifiers, pendingShapeDrag.measurementId);
+      }
       pendingShapeDrag = null;
       return;
     }

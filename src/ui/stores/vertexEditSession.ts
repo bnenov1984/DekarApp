@@ -18,7 +18,7 @@ import { removeVertexCommand } from '../../application/commands/removeVertex.js'
 import { resizeRectangleCommand } from '../../application/commands/resizeRectangle.js';
 import { resizeCircleCommand } from '../../application/commands/resizeCircle.js';
 import { translateMeasurementCommand } from '../../application/commands/translateMeasurement.js';
-import { findLinkedVertices, findSharedEdges } from '../../application/sharedVertices.js';
+import { findLinkedVertices, findSharedEdges, type VertexRef } from '../../application/sharedVertices.js';
 import { activeSurface, executeCommand } from './studioSession.js';
 import { snapEnabled } from './drawingSession.js';
 
@@ -190,11 +190,7 @@ export function pointerDown(point: Point, modifiers: PointerModifiers, measureme
       if (linked.some((ref) => findMeasurementEntity(ref.measurementId)?.locked)) return;
 
       if (modifiers.altKey) {
-        // Every participant must survive the deletion (too few vertices / would self-intersect),
-        // or nothing happens — 18 §6 silent rejection, checked here because the command throws.
-        const allOk = removeVertex(shape, vertexIndex).ok &&
-          linked.every((ref) => removeVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.vertexIndex).ok);
-        if (allOk) executeCommand((surface) => removeVertexCommand({ surface, measurementId, vertexIndex, linked: !detached }));
+        deleteVertex(shape, measurementId, vertexIndex, linked, detached);
         return;
       }
       try {
@@ -274,6 +270,33 @@ export function pointerDown(point: Point, modifiers: PointerModifiers, measureme
   if (hitTestShape(point, shape, MOVE_HIT_TOLERANCE)) {
     vertexDrag.set({ kind: 'move', startPoint: point, dx: 0, dy: 0, previewShape: shape });
   }
+}
+
+/** Alt+click deletion (15 §13) for a click that never became a drag: CanvasStage only calls
+ * `pointerDown` once the pointer crosses the drag threshold, so a still Alt+click reaches the
+ * session here instead, at mouseup. Deletes the selected shape's vertex under `point` (and, per
+ * PD-024, its linked neighbours') with the same rules as an Alt+drag; anything other than a vertex
+ * is ignored. */
+export function deleteVertexAt(point: Point, modifiers: PointerModifiers, measurementId: MeasurementId): void {
+  const measurement = findMeasurementEntity(measurementId);
+  if (!measurement || measurement.locked) return;
+  const shape = measurement.shape;
+  if (shape.type !== 'polygon' && shape.type !== 'curve' && shape.type !== 'freehand') return;
+  const vertexIndex = findVertexAt(point, shape, VERTEX_HIT_TOLERANCE);
+  if (vertexIndex === null) return;
+  const detached = !!(modifiers.ctrlKey || modifiers.metaKey);
+  const surface = get(activeSurface);
+  const linked = detached || !surface ? [] : findLinkedVertices(surface, measurementId, vertexIndex);
+  if (linked.some((ref) => findMeasurementEntity(ref.measurementId)?.locked)) return;
+  deleteVertex(shape, measurementId, vertexIndex, linked, detached);
+}
+
+function deleteVertex(shape: Shape, measurementId: MeasurementId, vertexIndex: number, linked: readonly VertexRef[], detached: boolean): void {
+  // Every participant must survive the deletion (too few vertices / would self-intersect), or
+  // nothing happens — 18 §6 silent rejection, checked here because the command throws.
+  const allOk = removeVertex(shape, vertexIndex).ok &&
+    linked.every((ref) => removeVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.vertexIndex).ok);
+  if (allOk) executeCommand((surface) => removeVertexCommand({ surface, measurementId, vertexIndex, linked: !detached }));
 }
 
 export function pointerMove(point: Point, modifiers: PointerModifiers): void {
@@ -359,6 +382,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       vertexDrag,
       cancelDrag,
       pointerDown,
+      deleteVertexAt,
       pointerMove,
       pointerUp,
       get,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { initStudioSession, activeSurface, executeCommand, setMeasurementLocked, undo } from './studioSession.js';
 import { createMeasurementCommand } from '../../application/commands/createMeasurement.js';
-import { vertexDrag, cancelDrag, pointerDown, pointerMove, pointerUp } from './vertexEditSession.js';
+import { vertexDrag, cancelDrag, pointerDown, deleteVertexAt, pointerMove, pointerUp } from './vertexEditSession.js';
 import type { Surface } from '../../core/domain/entities.js';
 
 // Vertex Editing slice — same integration-seam approach as the other *Session.test.ts files:
@@ -252,6 +252,29 @@ describe('Alt+click deletes a vertex', () => {
     // one more attempt must be silently rejected (18 §6 TOO_FEW_VERTICES)
     pointerDown({ x: 0, y: 100 }, { shiftKey: false, altKey: true }, 'm1');
     expect(measurementShape('m1')).toEqual(shapeAtFloor);
+  });
+
+  // CanvasStage calls deleteVertexAt at mouseup for an Alt+click that never crossed the drag
+  // threshold (pointerDown is only called once a drag starts).
+  it('deleteVertexAt removes the vertex under a still Alt+click', () => {
+    deleteVertexAt({ x: 0, y: 0 }, { shiftKey: false, altKey: true }, 'm1');
+    expect(get(vertexDrag)).toBeNull();
+    expect(measurementShape('m1')).toEqual({
+      type: 'polygon',
+      vertices: [{ x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+    });
+  });
+
+  it('deleteVertexAt ignores a click on an edge or the body, and a locked shape', () => {
+    deleteVertexAt({ x: 50, y: 0 }, { shiftKey: false, altKey: true }, 'm1');
+    deleteVertexAt({ x: 50, y: 50 }, { shiftKey: false, altKey: true }, 'm1');
+    expect(get(vertexDrag)).toBeNull();
+    setMeasurementLocked('m1', true);
+    deleteVertexAt({ x: 0, y: 0 }, { shiftKey: false, altKey: true }, 'm1');
+    expect(measurementShape('m1')).toEqual({
+      type: 'polygon',
+      vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+    });
   });
 });
 
@@ -540,5 +563,14 @@ describe('PD-024 — linked vertex drag', () => {
     setMeasurementLocked('right', true);
     expect(() => pointerDown({ x: 100, y: 0 }, ALT, 'left')).not.toThrow();
     expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+  });
+
+  it('a still Alt+click (deleteVertexAt) follows the same linked rules', () => {
+    deleteVertexAt({ x: 100, y: 0 }, ALT, 'left');
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+    undo();
+    deleteVertexAt({ x: 100, y: 0 }, { ...ALT, metaKey: true }, 'left');
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
   });
 });
