@@ -26,7 +26,9 @@ import { setManualAreaCommand } from './setManualArea.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { childrenOf, findMeasurement } from '../surfaceOps.js';
 import { shoelaceArea } from '../../core/measurement/formulas.js';
+import { isSimplePolygon } from '../../core/drawing/geometry.js';
 import type { Measurement, Surface } from '../../core/domain/entities.js';
+import fc from 'fast-check';
 
 // Round-trip shape required by the task, for every scenario below:
 //   initial state → execute → expected mutated state → undo → exact initial state
@@ -1327,5 +1329,216 @@ describe('PD-021 — Split group conserves the parent manual area', () => {
     const partBAfter = findMeasurement(afterDelete, 'partB')!.measurement;
     expect(partBAfter.parentId).toBeUndefined();
     expect(displayedArea(partBAfter)).toBeCloseTo(displayedArea(partBBefore), 6);
+  });
+});
+
+describe('PD-024 — linked vertex move (INV-19, T-INV-19)', () => {
+  // 20x10 parcel split down x=10 into two 10x10 parts. The boundary vertices (10,0) and (10,10)
+  // exist once in each part; the outer corners also exist in the parcel. Which child id ends up on
+  // which side is the split algorithm's business, so tests ask `sides()` instead of assuming.
+  function parcel(): Measurement {
+    return {
+      id: 'parcel',
+      shape: { type: 'polygon', vertices: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }] },
+      identity: { name: 'Parcel', color: '#2E7D32' },
+      provenance: 'Manual',
+      locked: false,
+    };
+  }
+
+  function vertices(surface: Surface, id: string): readonly { x: number; y: number }[] {
+    const shape = findMeasurement(surface, id)!.measurement.shape;
+    if (shape.type !== 'polygon') throw new Error('expected a polygon');
+    return shape.vertices;
+  }
+
+  function indexAt(surface: Surface, id: string, x: number, y: number): number {
+    const index = vertices(surface, id).findIndex((v) => Math.abs(v.x - x) < 1e-6 && Math.abs(v.y - y) < 1e-6);
+    if (index < 0) throw new Error(`${id} has no vertex at (${x}, ${y})`);
+    return index;
+  }
+
+  function hasVertexAt(surface: Surface, id: string, x: number, y: number): boolean {
+    return vertices(surface, id).some((v) => Math.abs(v.x - x) < 1e-6 && Math.abs(v.y - y) < 1e-6);
+  }
+
+  function split(stack: CommandStack, surface: Surface = makeTestSurface([parcel()])): Surface {
+    return stack.execute<Surface>(
+      splitCommand({ surface, parentMeasurementId: 'parcel', splitLine: [{ x: 10, y: -1 }, { x: 10, y: 11 }], childIds: ['partA', 'partB'] }),
+    );
+  }
+
+  function sides(surface: Surface): { left: string; right: string } {
+    return hasVertexAt(surface, 'partA', 0, 0) ? { left: 'partA', right: 'partB' } : { left: 'partB', right: 'partA' };
+  }
+
+  function patch(surface: Surface, id: string, changes: Partial<Measurement>): Surface {
+    return {
+      ...surface,
+      layers: surface.layers.map((layer) => ({
+        ...layer,
+        measurements: layer.measurements.map((m) => (m.id === id ? { ...m, ...changes } : m)),
+      })),
+    };
+  }
+
+  function moveVertex(stack: CommandStack, surface: Surface, id: string, from: [number, number], to: [number, number]): Surface {
+    return stack.execute<Surface>(
+      editVertexCommand({ surface, measurementId: id, vertexIndex: indexAt(surface, id, ...from), newPosition: { x: to[0], y: to[1] } }),
+    );
+  }
+
+  it('dragging a shared boundary vertex moves both parts and leaves the parent untouched; undo/redo are atomic', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+
+    const moved = moveVertex(stack, afterSplit, 'partA', [10, 0], [12, 0]);
+    expect(hasVertexAt(moved, 'partA', 12, 0)).toBe(true);
+    expect(hasVertexAt(moved, 'partB', 12, 0)).toBe(true);
+    expect(hasVertexAt(moved, 'partB', 10, 0)).toBe(false);
+    expect(findMeasurement(moved, 'parcel')).toEqual(findMeasurement(afterSplit, 'parcel'));
+    // no gap, no overlap: the parts still exactly tile the parcel
+    expect(shoelaceArea(vertices(moved, 'partA')) + shoelaceArea(vertices(moved, 'partB'))).toBeCloseTo(200, 9);
+
+    expect(stack.undo<Surface>()).toEqual(afterSplit);
+    expect(stack.redo<Surface>()).toEqual(moved);
+  });
+
+  it('a part outer corner does not drag the parent, and the parent corner does not drag its parts', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+
+    const { left, right } = sides(afterSplit);
+
+    const partCornerMoved = moveVertex(stack, afterSplit, left, [0, 0], [-2, 0]);
+    expect(hasVertexAt(partCornerMoved, 'parcel', 0, 0)).toBe(true);
+
+    const parentCornerMoved = moveVertex(stack, afterSplit, 'parcel', [20, 0], [22, 0]);
+    expect(hasVertexAt(parentCornerMoved, right, 20, 0)).toBe(true);
+  });
+
+  it('moves manually drawn neighbours snapped vertex-to-vertex (PD-009 equivalence)', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('left'), makeSquareMeasurement('right', 10)]);
+    const moved = moveVertex(new CommandStack(), initial, 'left', [10, 0], [11, -1]);
+    expect(vertices(moved, 'left')[1]).toEqual({ x: 11, y: -1 });
+    expect(vertices(moved, 'right')[0]).toEqual({ x: 11, y: -1 });
+  });
+
+  it('linked: false (Ctrl/Cmd+drag) moves only the source shape', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('left'), makeSquareMeasurement('right', 10)]);
+    const moved = new CommandStack().execute<Surface>(
+      editVertexCommand({ surface: initial, measurementId: 'left', vertexIndex: 1, newPosition: { x: 11, y: -1 }, linked: false }),
+    );
+    expect(vertices(moved, 'left')[1]).toEqual({ x: 11, y: -1 });
+    expect(vertices(moved, 'right')[0]).toEqual({ x: 10, y: 0 });
+  });
+
+  it('a locked neighbour refuses the whole move; the Surface is unchanged', () => {
+    const stack = new CommandStack();
+    const locked = patch(split(stack), 'partB', { locked: true });
+    const depthBefore = stack.undoDepth;
+    expect(() => moveVertex(stack, locked, 'partA', [10, 0], [12, 0])).toThrow(/locked/);
+    expect(stack.undoDepth).toBe(depthBefore);
+  });
+
+  it('a hidden neighbour follows (hiding is visual only)', () => {
+    const stack = new CommandStack();
+    const hidden = patch(split(stack), 'partB', { identity: { name: 'partB', color: '#000', hidden: true } });
+    const moved = moveVertex(stack, hidden, 'partA', [10, 0], [12, 0]);
+    expect(hasVertexAt(moved, 'partB', 12, 0)).toBe(true);
+  });
+
+  it('a move that would make any participant self-intersect is rejected entirely', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left } = sides(afterSplit);
+    const depthBefore = stack.undoDepth;
+    // (21,5) is still a simple quadrilateral for the left part, but makes the right part's edge
+    // (10,10)→(21,5) cross its own edge (20,0)→(20,10).
+    expect(() => moveVertex(stack, afterSplit, left, [10, 0], [21, 5])).toThrow(/self-intersect/);
+    expect(stack.undoDepth).toBe(depthBefore);
+  });
+
+  it('PD-021: a linked move keeps the Split group summing to the entered total', () => {
+    const stack = new CommandStack();
+    const withTotal = stack.execute<Surface>(setManualAreaCommand({ surface: makeTestSurface([parcel()]), measurementId: 'parcel', manualAreaM2: 1200 }));
+    const afterSplit = split(stack, withTotal);
+    const { left, right } = sides(afterSplit);
+    const moved = moveVertex(stack, afterSplit, right, [10, 10], [15, 10]);
+    const displayed = (id: string) =>
+      shoelaceArea(vertices(moved, id)) * (findMeasurement(moved, id)!.measurement.manualArea?.squareMetersPerSquarePixel ?? 0);
+    expect(displayed('partA') + displayed('partB')).toBeCloseTo(1200, 6);
+    expect(displayed(left)).toBeGreaterThan(displayed(right)); // the boundary really moved
+  });
+
+  it('nested split: a grandchild links to its cousin, never to its parent or grandparent', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left, right } = sides(afterSplit);
+    const nested = stack.execute<Surface>(
+      splitCommand({ surface: afterSplit, parentMeasurementId: left, splitLine: [{ x: -1, y: 5 }, { x: 11, y: 5 }], childIds: ['sub1', 'sub2'] }),
+    );
+    const lower = hasVertexAt(nested, 'sub1', 10, 0) ? 'sub1' : 'sub2';
+    const moved = moveVertex(stack, nested, lower, [10, 0], [12, 0]);
+    expect(hasVertexAt(moved, right, 12, 0)).toBe(true); // cousin follows
+    expect(findMeasurement(moved, left)).toEqual(findMeasurement(nested, left)); // parent untouched
+    expect(findMeasurement(moved, 'parcel')).toEqual(findMeasurement(nested, 'parcel')); // grandparent untouched
+  });
+
+  it('property: after a linked drag of a split boundary point, the parts still tile the moved outline', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 4, max: 9 }),
+        fc.integer({ min: 0, max: 8 }),
+        fc.integer({ min: 0, max: 8 }),
+        fc.double({ min: 0.2, max: 0.8, noNaN: true }),
+        fc.double({ min: 0.2, max: 0.8, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        (n, rawEdgeA, rawEdgeB, tA, tB, dx, dy) => {
+          const outline = Array.from({ length: n }, (_, i) => {
+            const theta = (2 * Math.PI * i) / n;
+            return { x: 10 * Math.cos(theta), y: 10 * Math.sin(theta) };
+          });
+          const edgeA = rawEdgeA % n;
+          const edgeB = rawEdgeB % n;
+          fc.pre(edgeA !== edgeB);
+          const on = (edge: number, t: number) => {
+            const p = outline[edge]!;
+            const q = outline[(edge + 1) % n]!;
+            return { x: p.x + t * (q.x - p.x), y: p.y + t * (q.y - p.y) };
+          };
+          const a = on(edgeA, tA);
+          const b = on(edgeB, tB);
+          const line = [
+            { x: a.x - 0.01 * (b.x - a.x), y: a.y - 0.01 * (b.y - a.y) },
+            { x: b.x + 0.01 * (b.x - a.x), y: b.y + 0.01 * (b.y - a.y) },
+          ];
+          const stack = new CommandStack();
+          const afterSplit = stack.execute<Surface>(
+            splitCommand({
+              surface: makeTestSurface([{ ...parcel(), shape: { type: 'polygon', vertices: outline } }]),
+              parentMeasurementId: 'parcel',
+              splitLine: line,
+              childIds: ['partA', 'partB'],
+            }),
+          );
+
+          const target = { x: a.x + dx, y: a.y + dy };
+          // The parts' combined outline is the parcel with the boundary point moved off edgeA.
+          const movedOutline = [...outline.slice(0, edgeA + 1), target, ...outline.slice(edgeA + 1)];
+          fc.pre(isSimplePolygon(movedOutline));
+          let moved: Surface;
+          try {
+            moved = moveVertex(stack, afterSplit, 'partA', [a.x, a.y], [target.x, target.y]);
+          } catch {
+            return; // a drag that would self-intersect a part is rejected as a whole — nothing to check
+          }
+          const sum = shoelaceArea(vertices(moved, 'partA')) + shoelaceArea(vertices(moved, 'partB'));
+          expect(sum).toBeCloseTo(shoelaceArea(movedOutline), 6);
+          expect(hasVertexAt(moved, 'partB', target.x, target.y)).toBe(true);
+        },
+      ),
+    );
   });
 });

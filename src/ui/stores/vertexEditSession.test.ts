@@ -376,3 +376,95 @@ describe('whole-shape move (all shape types)', () => {
     expect(measurementShape('r1')).toEqual(before);
   });
 });
+
+describe('PD-024 — linked vertex drag', () => {
+  // Two 100x100 squares side by side, sharing the edge x=100: left's vertex 1 (100,0) and right's
+  // vertex 0 (100,0) are the same point.
+  function createPolygon(id: string, vertices: { x: number; y: number }[]): void {
+    executeCommand((surface) =>
+      createMeasurementCommand({
+        surface,
+        layerId: 'layer1',
+        measurementId: id,
+        shapeParams: { type: 'polygon', vertices },
+        identity: { name: id, color: '#2E7D32' },
+        provenance: 'Manual',
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    createPolygon('left', [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]);
+    createPolygon('right', [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }]);
+  });
+
+  it('previews every shape sharing the dragged vertex', () => {
+    pointerDown({ x: 100, y: 0 }, NO_MOD, 'left');
+    pointerMove({ x: 120, y: -20 }, NO_MOD);
+    const drag = get(vertexDrag);
+    expect(drag?.kind).toBe('vertex');
+    if (drag?.kind !== 'vertex') return;
+    expect(drag.linkedPreviews).toEqual([
+      {
+        measurementId: 'right',
+        vertexIndex: 0,
+        previewShape: { type: 'polygon', vertices: [{ x: 120, y: -20 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] },
+      },
+    ]);
+  });
+
+  it('pointerUp moves both shapes in one undoable step', () => {
+    pointerDown({ x: 100, y: 0 }, NO_MOD, 'left');
+    pointerMove({ x: 120, y: -20 }, NO_MOD);
+    pointerUp();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 120, y: -20 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 120, y: -20 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+
+    undo();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it.each([
+    ['Ctrl', { ...NO_MOD, ctrlKey: true }],
+    ['Cmd', { ...NO_MOD, metaKey: true }],
+  ])('%s+drag moves only the selected shape', (_label, detach) => {
+    pointerDown({ x: 100, y: 0 }, detach, 'left');
+    pointerMove({ x: 120, y: -20 }, detach);
+    const drag = get(vertexDrag);
+    if (drag?.kind === 'vertex') expect(drag.linkedPreviews).toEqual([]);
+    pointerUp();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 120, y: -20 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('a locked neighbour blocks the drag, same as dragging a locked shape', () => {
+    setMeasurementLocked('right', true);
+    pointerDown({ x: 100, y: 0 }, NO_MOD, 'left');
+    expect(get(vertexDrag)).toBeNull();
+  });
+
+  it('a locked neighbour does not block Ctrl/Cmd+drag of the unlocked shape alone', () => {
+    setMeasurementLocked('right', true);
+    pointerDown({ x: 100, y: 0 }, { ...NO_MOD, ctrlKey: true }, 'left');
+    expect(get(vertexDrag)?.kind).toBe('vertex');
+  });
+
+  it('freezes when the move would make a neighbour self-intersect', () => {
+    pointerDown({ x: 100, y: 0 }, NO_MOD, 'left');
+    pointerMove({ x: 120, y: -20 }, NO_MOD);
+    const valid = get(vertexDrag);
+    // valid for left, but right's edge (100,100)→(210,50) would cross its own edge (200,0)→(200,100)
+    pointerMove({ x: 210, y: 50 }, NO_MOD);
+    expect(get(vertexDrag)).toEqual(valid);
+  });
+
+  it('snap is not captured by the neighbour that moves along', () => {
+    // (103,2) is within the 8-unit snap radius of right's own (100,0) — if the neighbour were a
+    // snap target, the drag would jump straight back to where it started.
+    pointerDown({ x: 100, y: 0 }, NO_MOD, 'left');
+    pointerMove({ x: 103, y: 2 }, NO_MOD);
+    pointerUp();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 103, y: 2 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+  });
+});

@@ -319,6 +319,17 @@ export function drawVertexHandles(ctx: CanvasRenderingContext2D, shape: Shape, a
  * `drawCalibrationLine` (18 §6 / 15 W5 "one mental model for everything unconfirmed"), outline
  * only so the real (still-current) Measurement fill stays visible underneath while dragging. */
 export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string, scale: number): void {
+  drawPreviewOutline(ctx, previewShape, accentColor);
+  drawVertexHandles(ctx, previewShape, accentColor, scale);
+}
+
+/** PD-024 — a neighbour moving along with a linked vertex drag: the same dashed ghost outline as
+ * the dragged shape's own preview, but without handles — only the selected shape is editable. */
+export function drawLinkedVertexPreview(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string): void {
+  drawPreviewOutline(ctx, previewShape, accentColor);
+}
+
+function drawPreviewOutline(ctx: CanvasRenderingContext2D, previewShape: Shape, accentColor: string): void {
   ctx.save();
   ctx.setLineDash([5, 4]);
   ctx.lineWidth = 2;
@@ -327,7 +338,6 @@ export function drawVertexEditPreview(ctx: CanvasRenderingContext2D, previewShap
   pathForShape(ctx, previewShape);
   ctx.stroke();
   ctx.restore();
-  drawVertexHandles(ctx, previewShape, accentColor, scale);
 }
 
 /** docs/18_DRAWING_ENGINE.md §5 (PD-009) / 15 W5-style ghost — the Split line plus, once it

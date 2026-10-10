@@ -104,6 +104,7 @@
     drawCalibrationLine,
     drawVertexHandles,
     drawVertexEditPreview,
+    drawLinkedVertexPreview,
     drawSelectionOutline,
     drawSplitPreview,
     drawBackgroundImage,
@@ -272,6 +273,9 @@
       const editing = surface.layers.flatMap((l) => l.measurements).find((m) => m.id === $selectedMeasurementId);
       if (editing && !editing.locked) {
         if ($vertexDrag) {
+          if ($vertexDrag.kind === 'vertex') {
+            for (const linked of $vertexDrag.linkedPreviews) drawLinkedVertexPreview(ctx, linked.previewShape, readAccentColor());
+          }
           drawVertexEditPreview(ctx, $vertexDrag.previewShape, readAccentColor(), $viewport.scale);
         } else {
           drawVertexHandles(ctx, editing.shape, readAccentColor(), $viewport.scale);
@@ -569,7 +573,8 @@
       return;
     }
     if (pendingShapeDrag) {
-      const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey };
+      // PD-024 — Ctrl/⌘ at drag start detaches a vertex drag from its neighbours.
+      const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey };
       if (!pendingShapeDrag.started) {
         if (!exceedsDragThreshold(pendingShapeDrag.startClientX, pendingShapeDrag.startClientY, event.clientX, event.clientY)) {
           return; // still just a held-down click so far, below the drag threshold

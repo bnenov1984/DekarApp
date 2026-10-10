@@ -18,6 +18,7 @@ import { removeVertexCommand } from '../../application/commands/removeVertex.js'
 import { resizeRectangleCommand } from '../../application/commands/resizeRectangle.js';
 import { resizeCircleCommand } from '../../application/commands/resizeCircle.js';
 import { translateMeasurementCommand } from '../../application/commands/translateMeasurement.js';
+import { findLinkedVertices } from '../../application/sharedVertices.js';
 import { activeSurface, executeCommand } from './studioSession.js';
 import { snapEnabled } from './drawingSession.js';
 
@@ -56,6 +57,18 @@ const MOVE_HIT_TOLERANCE = 8; // only matters for open shapes (Line) — closed 
 interface PointerModifiers {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
+  /** PD-024 — Ctrl (Windows/Linux) or ⌘ (macOS) held while a vertex drag starts detaches it:
+   * only the selected shape's vertex moves, not the coincident vertices of its neighbours. */
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+}
+
+/** PD-024 — a neighbour's vertex that moves along with the dragged one, and that neighbour's live
+ * preview (CanvasStage draws it as an outline next to the dragged shape's own preview). */
+export interface LinkedPreview {
+  readonly measurementId: MeasurementId;
+  readonly vertexIndex: number;
+  readonly previewShape: Shape;
 }
 
 interface VertexDrag {
@@ -63,6 +76,9 @@ interface VertexDrag {
   readonly index: number;
   readonly lastValidPosition: Point;
   readonly previewShape: Shape;
+  /** Fixed at pointerDown for the whole drag; empty when detached or nothing is shared. */
+  readonly linkedPreviews: readonly LinkedPreview[];
+  readonly detached: boolean;
 }
 
 interface EdgeDrag {
@@ -113,15 +129,18 @@ function findMeasurementEntity(measurementId: MeasurementId): Measurement | null
   return null;
 }
 
-function otherShapes(excludeId: MeasurementId): Shape[] {
+function otherShapes(excludeIds: ReadonlySet<MeasurementId>): Shape[] {
   const surface = get(activeSurface);
   if (!surface) return [];
-  return surface.layers.flatMap((l) => l.measurements.filter((m) => m.id !== excludeId).map((m) => m.shape));
+  return surface.layers.flatMap((l) => l.measurements.filter((m) => !excludeIds.has(m.id)).map((m) => m.shape));
 }
 
-function resolveSnap(cursor: Point, modifiers: PointerModifiers, excludeId: MeasurementId): Point {
+/** `excludeIds` — the dragged shape itself plus, for a linked vertex drag (PD-024), every
+ * neighbour moving along with it: their committed geometry still has a vertex at the drag's
+ * starting point, which would otherwise pull the cursor straight back to where it started. */
+function resolveSnap(cursor: Point, modifiers: PointerModifiers, excludeIds: ReadonlySet<MeasurementId>): Point {
   return snap(cursor, {
-    otherShapes: otherShapes(excludeId),
+    otherShapes: otherShapes(excludeIds),
     toleranceSurfaceUnits: SNAP_TOLERANCE_SURFACE_UNITS,
     snapEnabled: get(snapEnabled) && !modifiers.altKey,
     angleConstraintHeld: modifiers.shiftKey,
@@ -157,9 +176,20 @@ export function pointerDown(point: Point, modifiers: PointerModifiers, measureme
         // result.ok === false (too few vertices / would self-intersect) — 18 §6 silent rejection.
         return;
       }
+      // PD-024 — the neighbours sharing this vertex move with it unless Ctrl/⌘ detaches the drag.
+      // A locked neighbour blocks the linked drag outright (the command would refuse it anyway),
+      // the same silent no-op as trying to drag a locked shape.
+      const detached = !!(modifiers.ctrlKey || modifiers.metaKey);
+      const surface = get(activeSurface);
+      const linked = detached || !surface ? [] : findLinkedVertices(surface, measurementId, vertexIndex);
+      if (linked.some((ref) => findMeasurementEntity(ref.measurementId)?.locked)) return;
       try {
         const preview = editVertex(shape, vertexIndex, point);
-        vertexDrag.set({ kind: 'vertex', index: vertexIndex, lastValidPosition: point, previewShape: preview });
+        const linkedPreviews = linked.map((ref) => ({
+          ...ref,
+          previewShape: editVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.vertexIndex, point),
+        }));
+        vertexDrag.set({ kind: 'vertex', index: vertexIndex, lastValidPosition: point, previewShape: preview, linkedPreviews, detached });
       } catch {
         // degenerate starting position — don't start a drag
       }
@@ -237,12 +267,19 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
     return;
   }
 
-  const snapped = resolveSnap(point, modifiers, measurementId);
+  const linkedIds = drag.kind === 'vertex' ? drag.linkedPreviews.map((p) => p.measurementId) : [];
+  const snapped = resolveSnap(point, modifiers, new Set([measurementId, ...linkedIds]));
 
   try {
     if (drag.kind === 'vertex') {
+      // Every participant must stay valid, or the whole preview freezes (18 §6 silent rejection) —
+      // the command applies the same all-or-nothing rule at commit.
       const preview = editVertex(shape, drag.index, snapped);
-      vertexDrag.set({ kind: 'vertex', index: drag.index, lastValidPosition: snapped, previewShape: preview });
+      const linkedPreviews = drag.linkedPreviews.map((linked) => ({
+        ...linked,
+        previewShape: editVertex(findMeasurementEntity(linked.measurementId)!.shape, linked.vertexIndex, snapped),
+      }));
+      vertexDrag.set({ ...drag, lastValidPosition: snapped, previewShape: preview, linkedPreviews });
     } else if (drag.kind === 'edge') {
       const preview = addVertex(shape, drag.edgeIndex, snapped);
       vertexDrag.set({ kind: 'edge', edgeIndex: drag.edgeIndex, lastValidPosition: snapped, previewShape: preview });
@@ -269,7 +306,7 @@ export function pointerUp(): void {
 
   if (drag.kind === 'vertex') {
     executeCommand((surface) =>
-      editVertexCommand({ surface, measurementId, vertexIndex: drag.index, newPosition: drag.lastValidPosition }),
+      editVertexCommand({ surface, measurementId, vertexIndex: drag.index, newPosition: drag.lastValidPosition, linked: !drag.detached }),
     );
   } else if (drag.kind === 'edge') {
     executeCommand((surface) =>
