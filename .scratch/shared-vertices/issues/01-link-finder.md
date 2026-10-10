@@ -1,6 +1,6 @@
 # 01 — Link finder
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: —
 Spec: ../spec.md · PD-024 · INV-19 · 18 §6.1
@@ -36,3 +36,5 @@ Table-driven unit tests (mirror `src/core/drawing/hitTest.test.ts`):
 Core + `surfaceOps.ts`).
 
 ## Comments
+
+**2026-10-10 — resolved.** Implemented in `d912e0a`: `src/core/drawing/coincidence.ts` (epsilon, `pointsCoincide`, `pointOnSegmentInterior`) and `src/application/sharedVertices.ts` (`isAncestorOrDescendant`, `findLinkedVertices`, `findSharedEdges`), with table-driven tests beside each. `editablePoints`/`isClosedEditable` are now exported from `hitTest.ts` instead of being copied a third time.
