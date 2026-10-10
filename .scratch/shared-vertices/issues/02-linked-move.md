@@ -1,6 +1,6 @@
 # 02 — Linked move (first user-visible slice)
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 01
 Spec: ../spec.md · PD-024 §1–5, §8 · INV-19 · 18 §6.1
@@ -40,3 +40,22 @@ their combined outline.
 Manual check in the running app (plan Verification section).
 
 ## Comments
+
+**2026-10-10 — resolved.** Implemented in `d58f607`. Deviations and findings:
+
+- **Snap:** linked participants are excluded from snap targets entirely, rather than being kept as
+  snap targets without the moving vertex. Removing one vertex from a polygon creates a phantom
+  chord edge, which would be a worse snap target than none. The cost is that you can't snap the
+  dragged point to a participant's *other* vertices, but doing that would collapse that
+  participant's edge to zero length.
+- **Locked neighbour in the UI:** `pointerDown` doesn't start a linked drag when a participant is
+  locked (the same silent no-op as dragging a locked shape). Ctrl/⌘+drag still works on the unlocked
+  shape alone.
+- **Selection at outer corners:** verified that no change is needed. `findMeasurementAt` returns the
+  topmost hit, and Split appends the parts after the parent, so a part wins (confirmed in the app:
+  clicking inside the left half selected "Part 2", not the parcel).
+- **Neighbour preview:** drawn as a dashed outline without handles (`drawLinkedVertexPreview`), since
+  only the selected shape is editable.
+- **Hands-on check** (Chrome via playwright-core, real mouse on the canvas): draw → Split → drag the
+  shared top vertex moved both parts and left the parent unchanged; Ctrl+Z restored both in one
+  step; Ctrl+drag moved only the selected part. Mid-drag frame showed both previews.
