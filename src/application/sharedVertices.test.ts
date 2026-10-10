@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Layer, Measurement, Surface } from '../core/domain/entities.js';
 import type { Point, Shape } from '../core/domain/types.js';
 import { dissolveSplitGroup, removeMeasurements } from './surfaceOps.js';
-import { findLinkedVertices, findSharedEdges, isAncestorOrDescendant } from './sharedVertices.js';
+import { closeTJunctions, findLinkedVertices, findSharedEdges, isAncestorOrDescendant, splitJunctions } from './sharedVertices.js';
 
 // PD-024 / INV-19 — unit coverage for the pure link-finding helpers. The behaviour users see
 // (linked move/insert/delete) is pinned down at the command seam, commands/roundtrip.test.ts.
@@ -159,5 +159,63 @@ describe('findSharedEdges', () => {
     const a = polygon('a', [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }]);
     const freehand = measurement('freehand', { type: 'freehand', points: [{ x: 4, y: 0 }, { x: 0, y: 0 }], closed: false });
     expect(findSharedEdges(surfaceOf([a, freehand]), 'a', 0)).toEqual([{ measurementId: 'freehand', edgeIndex: 0 }]);
+  });
+});
+
+describe('splitJunctions', () => {
+  it('returns the points where the parts meet the parent outline', () => {
+    const points = splitJunctions(left.shape, [lower.shape, upper.shape]);
+    expect(points).toHaveLength(2);
+    expect(points).toEqual(expect.arrayContaining([{ x: 0, y: 5 }, { x: 5, y: 5 }]));
+  });
+
+  it('ignores corners only one part has, and junctions strictly inside the parent', () => {
+    // three parts meeting at an interior point (5,5) of a 10x10 parcel, plus the outline points
+    const a = { type: 'polygon' as const, vertices: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 5 }] };
+    const b = { type: 'polygon' as const, vertices: [{ x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 5, y: 5 }] };
+    const c = { type: 'polygon' as const, vertices: [{ x: 0, y: 10 }, { x: 0, y: 0 }, { x: 5, y: 5 }] };
+    const points = splitJunctions(parcel.shape, [a, b, c]);
+    expect(points).toEqual(expect.arrayContaining([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }]));
+    expect(points).not.toContainEqual({ x: 5, y: 5 });
+    expect(points).not.toContainEqual({ x: 10, y: 10 });
+  });
+});
+
+describe('closeTJunctions', () => {
+  it('inserts a junction lying on a neighbour edge into that edge, collinear', () => {
+    const closed = closeTJunctions(nested, [{ x: 0, y: 5 }, { x: 5, y: 5 }], 'left');
+    const shape = closed.layers[0]!.measurements.find((m) => m.id === 'right')!.shape;
+    expect(shape).toEqual({ type: 'polygon', vertices: [{ x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 5, y: 10 }, { x: 5, y: 5 }] });
+    expect(findLinkedVertices(closed, 'upper', 1)).toContainEqual({ measurementId: 'right', vertexIndex: 4 });
+  });
+
+  it('never touches the split measurement, its ancestors or its parts', () => {
+    const closed = closeTJunctions(nested, [{ x: 0, y: 5 }, { x: 5, y: 5 }], 'left');
+    for (const id of ['parcel', 'left', 'lower', 'upper']) {
+      expect(closed.layers[0]!.measurements.find((m) => m.id === id)).toEqual(nested.layers[0]!.measurements.find((m) => m.id === id));
+    }
+  });
+
+  it('skips a locked neighbour instead of failing', () => {
+    const surface = surfaceOf([parcel, left, { ...right, locked: true }, lower, upper]);
+    expect(closeTJunctions(surface, [{ x: 5, y: 5 }], 'left')).toEqual(surface);
+  });
+
+  it('shifts the neighbour vertex labels, and does nothing where a vertex already exists', () => {
+    const a = { text: 'A', color: '#1565C0' };
+    const b = { text: 'B', color: '#1565C0' };
+    // right, starting at (5,10) so the edge through (5,5) is edge 0 and the insertion lands at index 1
+    const labelled = polygon('right', [{ x: 5, y: 10 }, { x: 5, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], { parentId: 'parcel', vertexLabels: [a, b] });
+    const surface = surfaceOf([parcel, left, labelled, lower, upper]);
+    const closed = closeTJunctions(surface, [{ x: 5, y: 5 }], 'left');
+    expect(closed.layers[0]!.measurements.find((m) => m.id === 'right')!.vertexLabels).toEqual([a, null, b]);
+    expect(closeTJunctions(closed, [{ x: 5, y: 5 }], 'left')).toEqual(closed);
+  });
+
+  it('ignores curves and shapes without edges through the point', () => {
+    const curve = measurement('curve', { type: 'curve', controlPoints: [{ x: 5, y: 0 }, { x: 5, y: 10 }], closed: false });
+    const far = polygon('far', [{ x: 20, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 10 }]);
+    const surface = surfaceOf([parcel, left, lower, upper, curve, far]);
+    expect(closeTJunctions(surface, [{ x: 5, y: 5 }], 'left')).toEqual(surface);
   });
 });

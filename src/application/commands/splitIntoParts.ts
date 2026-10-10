@@ -2,11 +2,13 @@ import type { Command } from '../commandStack.js';
 import type { Measurement, MeasurementId, Surface } from '../../core/domain/entities.js';
 import type { PolygonShape } from '../../core/domain/types.js';
 import { addMeasurement, findMeasurement } from '../surfaceOps.js';
+import { closeTJunctions, splitJunctions } from '../sharedVertices.js';
 
 // PO request ("Redesign and fix Split functionality") — N-child generalization of split.ts's
 // splitCommand: same "Split е допълнение, не замяна" contract (PD-009, split.ts's own docs) —
-// the parent Measurement is never removed/replaced, this command only *adds* N new child
-// Measurements referencing it via `parentId`. Geometry is decided by the caller (splitSession.ts,
+// the parent Measurement is never removed/replaced, this command *adds* N new child
+// Measurements referencing it via `parentId`, and closes the T-junctions their boundaries make on
+// neighbouring edges (PD-024 §6, see split.ts). Geometry is decided by the caller (splitSession.ts,
 // via core/drawing/splitParts.ts's splitIntoParts) — this command only persists already-computed
 // shapes, mirroring split.ts's own division of labor (Core decides geometry, Application persists).
 
@@ -59,7 +61,7 @@ export function splitIntoPartsCommand(params: SplitIntoPartsParams): Command<Sur
         };
         next = addMeasurement(next, found.layerId, child);
       });
-      return next;
+      return closeTJunctions(next, splitJunctions(parent.shape, params.childShapes), params.parentMeasurementId);
     },
     undo: () => before,
     event: {

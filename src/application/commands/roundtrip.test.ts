@@ -1700,4 +1700,60 @@ describe('PD-024 — shared vertices (INV-19, T-INV-19)', () => {
     expect(() => deleteVertex(stack, patch(sideBySide(), 'right', { locked: true }), 'left', [10, 0])).toThrow(/locked/);
     expect(stack.undoDepth).toBe(0);
   });
+
+  // Split the parcel at x=10, then split its right part again along y=5: the new boundary ends at
+  // (10,5), which lies in the middle of the left part's edge (10,0)→(10,10) — a T-junction.
+  function splitRightAcross(stack: CommandStack, surface: Surface): Surface {
+    return stack.execute<Surface>(
+      splitCommand({ surface, parentMeasurementId: sides(surface).right, splitLine: [{ x: 9, y: 5 }, { x: 21, y: 5 }], childIds: ['sub1', 'sub2'] }),
+    );
+  }
+
+  it('T-junction: a new split ending on a neighbour edge adds a collinear vertex there; the neighbour area is unchanged', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left, right } = sides(afterSplit);
+    const resplit = splitRightAcross(stack, afterSplit);
+    expect(hasVertexAt(resplit, left, 10, 5)).toBe(true);
+    expect(shoelaceArea(vertices(resplit, left))).toBeCloseTo(100, 9);
+    expect(findMeasurement(resplit, 'parcel')).toEqual(findMeasurement(afterSplit, 'parcel')); // ancestor: no T at (20,5)
+    expect(findMeasurement(resplit, right)).toEqual(findMeasurement(afterSplit, right)); // the split parent itself (PD-009)
+
+    expect(stack.undo<Surface>()).toEqual(afterSplit); // one undo removes the parts and the inserted vertex
+  });
+
+  it('T-junction: the closed junction is shared, so dragging it moves the neighbour and both new parts', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left } = sides(afterSplit);
+    const moved = moveVertex(stack, splitRightAcross(stack, afterSplit), left, [10, 5], [12, 5]);
+    expect(hasVertexAt(moved, 'sub1', 12, 5)).toBe(true);
+    expect(hasVertexAt(moved, 'sub2', 12, 5)).toBe(true);
+    expect(shoelaceArea(vertices(moved, left)) + shoelaceArea(vertices(moved, 'sub1')) + shoelaceArea(vertices(moved, 'sub2'))).toBeCloseTo(200, 9);
+  });
+
+  it('T-junction: split into parts closes every junction on the neighbour edge', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left, right } = sides(afterSplit);
+    const strip = (y0: number, y1: number) => ({ type: 'polygon' as const, vertices: [{ x: 10, y: y0 }, { x: 20, y: y0 }, { x: 20, y: y1 }, { x: 10, y: y1 }] });
+    const parts = stack.execute<Surface>(
+      splitIntoPartsCommand({ surface: afterSplit, parentMeasurementId: right, childShapes: [strip(0, 3), strip(3, 6), strip(6, 10)], childIds: ['s1', 's2', 's3'] }),
+    );
+    expect(hasVertexAt(parts, left, 10, 3)).toBe(true);
+    expect(hasVertexAt(parts, left, 10, 6)).toBe(true);
+    expect(isSimplePolygon(vertices(parts, left))).toBe(true);
+    expect(shoelaceArea(vertices(parts, left))).toBeCloseTo(100, 9);
+    expect(findMeasurement(parts, 'parcel')).toEqual(findMeasurement(afterSplit, 'parcel'));
+  });
+
+  it('T-junction: a locked neighbour is skipped — the split still succeeds', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left } = sides(afterSplit);
+    const locked = patch(afterSplit, left, { locked: true });
+    const resplit = splitRightAcross(stack, locked);
+    expect(findMeasurement(resplit, 'sub1')).toBeDefined();
+    expect(findMeasurement(resplit, left)).toEqual(findMeasurement(locked, left));
+  });
 });

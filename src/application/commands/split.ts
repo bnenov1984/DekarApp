@@ -3,6 +3,7 @@ import type { Measurement, MeasurementId, Surface } from '../../core/domain/enti
 import type { Point } from '../../core/domain/types.js';
 import { split as coreSplit } from '../../core/drawing/split.js';
 import { addMeasurement, findMeasurement } from '../surfaceOps.js';
+import { closeTJunctions, splitJunctions } from '../sharedVertices.js';
 
 export interface SplitParams {
   readonly surface: Surface;
@@ -15,12 +16,14 @@ export interface SplitParams {
 /**
  * PD-009 — "Split е допълнение, не замяна": the parent Measurement is never removed or
  * replaced. It stays exactly as it was (full undivided polygon, own Shape, own computed area
- * that happens to equal the children's sum — INV-4). This command only *adds* two new child
+ * that happens to equal the children's sum — INV-4). This command *adds* two new child
  * Measurements referencing the parent via `parentId`. Consequences:
- *  - undo() is the plain "restore `before`" shared by every command here — removing the two
- *    children is enough, nothing about the parent or any sibling measurement was ever touched.
- *  - manually-drawn measurements elsewhere on the Surface are completely unaffected — this
- *    command only ever reads the one parent it was given and appends to one layer.
+ *  - undo() is the plain "restore `before`" shared by every command here, so it also reverts the
+ *    one other change below in the same step.
+ *  - PD-024 §6 — the only other measurements it touches are neighbours whose edge the new
+ *    boundary ends on (a T-junction): they gain that end point as a collinear vertex, so they share
+ *    it with the new parts (sharedVertices.ts's closeTJunctions). Their geometry and area are
+ *    unchanged; the parent and its ancestors are never touched.
  */
 export function splitCommand(params: SplitParams): Command<Surface> {
   const before = params.surface;
@@ -69,7 +72,8 @@ export function splitCommand(params: SplitParams): Command<Surface> {
       };
 
       const withA = addMeasurement(before, found.layerId, childA);
-      return addMeasurement(withA, found.layerId, childB);
+      const withBoth = addMeasurement(withA, found.layerId, childB);
+      return closeTJunctions(withBoth, splitJunctions(parentShape, [shapeA, shapeB]), params.parentMeasurementId);
     },
     undo: () => before,
     event: {

@@ -1,8 +1,10 @@
 import type { Measurement, MeasurementId, Surface } from '../core/domain/entities.js';
-import type { Point } from '../core/domain/types.js';
-import { pointsCoincide } from '../core/drawing/coincidence.js';
+import type { Point, Shape } from '../core/domain/types.js';
+import { pointOnSegmentInterior, pointsCoincide } from '../core/drawing/coincidence.js';
+import { addVertex } from '../core/drawing/drawingEngine.js';
 import { editablePoints, isClosedEditable } from '../core/drawing/hitTest.js';
-import { findMeasurement } from './surfaceOps.js';
+import { findMeasurement, replaceMeasurement } from './surfaceOps.js';
+import { insertLabelAt, withVertexLabels } from './vertexLabels.js';
 
 // PD-024 / INV-19 — topological editing. Shapes stay independent value objects (INV-1); a "shared"
 // vertex is derived from coordinates at edit time and never stored — the same derived-not-stored
@@ -102,4 +104,56 @@ export function findSharedEdges(surface: Surface, measurementId: MeasurementId, 
     }
     return refs;
   });
+}
+
+/** PD-024 §6 — where a Split's dividing boundaries meet the parent's outline: points that are a
+ * vertex of at least two parts and lie on the parent's outline (on a vertex or an edge). A
+ * neighbour's edge can only run through the parent's outline, so these are the only candidates for
+ * a new T-junction; boundary points strictly inside the parent are shared by its parts already. */
+export function splitJunctions(parentShape: Shape, childShapes: readonly Shape[]): Point[] {
+  const outline = editablePoints(parentShape);
+  if (!outline) return [];
+  const onOutline = (p: Point) =>
+    outline.some((v, i) => pointsCoincide(p, v) || pointOnSegmentInterior(p, v, outline[(i + 1) % outline.length]!));
+  const childPoints = childShapes.map((shape) => editablePoints(shape) ?? []);
+
+  const junctions: Point[] = [];
+  childPoints.forEach((points, i) => {
+    for (const p of points) {
+      if (junctions.some((q) => pointsCoincide(p, q))) continue;
+      const sharedWithAnotherPart = childPoints.some((other, j) => j !== i && other.some((q) => pointsCoincide(p, q)));
+      if (sharedWithAnotherPart && onOutline(p)) junctions.push(p);
+    }
+  });
+  return junctions;
+}
+
+/** PD-024 §6 — closes the T-junctions a new Split creates: each of `points` that lies in the middle
+ * of a neighbour's straight edge (polygon or freehand) is inserted into that edge as a vertex, so
+ * the neighbour and the new parts share it from now on. The insertion is collinear, so no area
+ * changes. Never touches `splitMeasurementId` itself (PD-009), its ancestors or its parts — none of
+ * them link to the parts anyway. A locked neighbour is skipped rather than refusing the Split
+ * (decided 2026-10-10): only the link is lost, never geometry. */
+export function closeTJunctions(surface: Surface, points: readonly Point[], splitMeasurementId: MeasurementId): Surface {
+  return points.reduce(
+    (current, point) =>
+      allMeasurements(current).reduce((next, measurement) => {
+        if (measurement.id === splitMeasurementId || measurement.locked) return next;
+        if (isAncestorOrDescendant(next, splitMeasurementId, measurement.id)) return next;
+        const edgePoints = straightEdgePoints(measurement);
+        if (!edgePoints || edgePoints.some((v) => pointsCoincide(v, point))) return next;
+        let edgeIndex = -1;
+        for (let i = 0; i < edgeCount(measurement, edgePoints); i++) {
+          if (pointOnSegmentInterior(point, edgePoints[i]!, edgePoints[(i + 1) % edgePoints.length]!)) {
+            edgeIndex = i;
+            break;
+          }
+        }
+        if (edgeIndex < 0) return next;
+        const shape = addVertex(measurement.shape, edgeIndex, point);
+        const vertexLabels = insertLabelAt(measurement.vertexLabels, edgeIndex + 1);
+        return replaceMeasurement(next, measurement.id, withVertexLabels({ ...measurement, shape }, vertexLabels));
+      }, current),
+    surface,
+  );
 }
