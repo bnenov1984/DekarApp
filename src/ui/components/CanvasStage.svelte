@@ -55,6 +55,7 @@
     cancelDrag,
     pointerDown as vertexPointerDown,
     deleteVertexAt,
+    grabsSelectedHandle,
     pointerMove as vertexPointerMove,
     pointerUp as vertexPointerUp,
   } from '../stores/vertexEditSession.js';
@@ -512,7 +513,11 @@
 
     // Neutral interaction state — direct selection + drag-to-edit.
     const point = toSurfacePoint(event);
-    const hitId = $activeSurface ? findMeasurementAt($activeSurface, point, selectHitTolerance) : null;
+    // PD-024 §4 — a press on a handle of the selected shape (vertex, edge, corner) keeps that shape
+    // selected even where another shape is on top, e.g. at a vertex shared with a neighbour;
+    // otherwise the topmost hit is selected as usual.
+    const keepSelected = !event.shiftKey && $selectedMeasurementId !== null && grabsSelectedHandle(point, $selectedMeasurementId);
+    const hitId = keepSelected ? $selectedMeasurementId : $activeSurface ? findMeasurementAt($activeSurface, point, selectHitTolerance) : null;
 
     if (hitId) {
       // PO follow-up ("unify object selection and edit state") — select immediately at mousedown

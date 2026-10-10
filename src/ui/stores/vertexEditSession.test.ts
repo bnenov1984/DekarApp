@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { initStudioSession, activeSurface, executeCommand, setMeasurementLocked, undo } from './studioSession.js';
 import { createMeasurementCommand } from '../../application/commands/createMeasurement.js';
-import { vertexDrag, cancelDrag, pointerDown, deleteVertexAt, pointerMove, pointerUp } from './vertexEditSession.js';
+import { vertexDrag, cancelDrag, pointerDown, deleteVertexAt, grabsSelectedHandle, pointerMove, pointerUp } from './vertexEditSession.js';
 import type { Surface } from '../../core/domain/entities.js';
 
 // Vertex Editing slice — same integration-seam approach as the other *Session.test.ts files:
@@ -281,6 +281,12 @@ describe('Alt+click deletes a vertex', () => {
 describe('rectangle corner resize', () => {
   beforeEach(() => {
     createRectangle('r1'); // origin (0,0), 100x50
+  });
+
+  it('grabsSelectedHandle is true on a corner handle, false on a rectangle edge or body (no handle there)', () => {
+    expect(grabsSelectedHandle({ x: 100, y: 50 }, 'r1')).toBe(true);
+    expect(grabsSelectedHandle({ x: 50, y: 0 }, 'r1')).toBe(false);
+    expect(grabsSelectedHandle({ x: 50, y: 25 }, 'r1')).toBe(false);
   });
 
   it('dragging a corner resizes, keeping the diagonally opposite corner fixed', () => {
@@ -563,6 +569,21 @@ describe('PD-024 — linked vertex drag', () => {
     setMeasurementLocked('right', true);
     expect(() => pointerDown({ x: 100, y: 0 }, ALT, 'left')).not.toThrow();
     expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+  });
+
+  // PD-024 §4 — CanvasStage keeps the selected shape selected when a press lands on one of its
+  // vertices or edges, instead of reselecting whichever coincident shape is on top.
+  it('grabsSelectedHandle is true on the selected shape vertices and edges, false on its body or elsewhere', () => {
+    expect(grabsSelectedHandle({ x: 100, y: 0 }, 'left')).toBe(true); // shared vertex
+    expect(grabsSelectedHandle({ x: 103, y: 2 }, 'left')).toBe(true); // within the 8-unit grab radius
+    expect(grabsSelectedHandle({ x: 100, y: 40 }, 'left')).toBe(true); // shared edge
+    expect(grabsSelectedHandle({ x: 50, y: 50 }, 'left')).toBe(false); // body: a press there may mean another shape
+    expect(grabsSelectedHandle({ x: 150, y: 50 }, 'left')).toBe(false); // inside the neighbour
+  });
+
+  it('grabsSelectedHandle is false for a locked shape', () => {
+    setMeasurementLocked('left', true);
+    expect(grabsSelectedHandle({ x: 100, y: 0 }, 'left')).toBe(false);
   });
 
   it('a still Alt+click (deleteVertexAt) follows the same linked rules', () => {

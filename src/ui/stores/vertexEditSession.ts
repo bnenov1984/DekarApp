@@ -166,6 +166,24 @@ export function cancelDrag(): void {
   draggingMeasurementId = null;
 }
 
+/** PD-024 §4 — where several shapes have a point under the press, the *selected* one wins.
+ * CanvasStage asks this at mousedown: when the press lands on a handle `pointerDown` would grab on
+ * the selected shape (vertex, edge, rectangle corner, circle radius handle), it keeps that shape
+ * selected instead of reselecting the topmost hit, so a linked or Ctrl/⌘-detached edit acts on
+ * the shape the user is looking at. A press on the body doesn't count: there the user may well
+ * mean the shape on top. Same tolerances as `pointerDown`. */
+export function grabsSelectedHandle(point: Point, measurementId: MeasurementId): boolean {
+  const measurement = findMeasurementEntity(measurementId);
+  if (!measurement || measurement.locked || measurement.identity.hidden) return false;
+  const shape = measurement.shape;
+  if (shape.type === 'polygon' || shape.type === 'curve' || shape.type === 'freehand') {
+    return findVertexAt(point, shape, VERTEX_HIT_TOLERANCE) !== null || findEdgeAt(point, shape, EDGE_HIT_TOLERANCE) !== null;
+  }
+  if (shape.type === 'rectangle') return findRectangleCornerAt(point, shape, VERTEX_HIT_TOLERANCE) !== null;
+  if (shape.type === 'circle') return isNearCircleHandle(point, shape, VERTEX_HIT_TOLERANCE);
+  return false;
+}
+
 /** 21 §6.3's single click-to-edit entry point (CanvasStage.svelte) — `measurementId` is whichever
  * shape is already selected (`studioSession.ts`'s `selectedMeasurementId`); this only decides
  * whether the pointer landed on a handle/edge/vertex/body of *that* shape and, if so, starts the
@@ -383,6 +401,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       cancelDrag,
       pointerDown,
       deleteVertexAt,
+      grabsSelectedHandle,
       pointerMove,
       pointerUp,
       get,
