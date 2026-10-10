@@ -81,8 +81,10 @@ function nearestPointToLine(point: Point, from: Point, to: Point): number {
 // `getPoints` enforces. A narrower, purpose-built helper rather than reuse of snap.ts's broader
 // `shapePoints` (which also includes Rectangle corners/Circle center — snap *targets*, not
 // vertex-*edit* candidates; Rectangle/Circle have no addVertex/editVertex support at all).
+// Exported for PD-024's shared-vertex lookup (application/sharedVertices.ts), which must agree
+// exactly with what vertex editing considers a vertex.
 
-function editablePoints(shape: Shape): readonly Point[] | null {
+export function editablePoints(shape: Shape): readonly Point[] | null {
   switch (shape.type) {
     case 'polygon':
       return shape.vertices;
@@ -95,7 +97,7 @@ function editablePoints(shape: Shape): readonly Point[] | null {
   }
 }
 
-function isClosedEditable(shape: Shape): boolean {
+export function isClosedEditable(shape: Shape): boolean {
   return shape.type === 'polygon' || ((shape.type === 'curve' || shape.type === 'freehand') && shape.closed);
 }
 
