@@ -4,11 +4,15 @@ import { removeVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
 import { removeLabelAt, withVertexLabels } from '../vertexLabels.js';
 import { rebalanceSplitGroups } from '../splitGroup.js';
+import { findLinkedVertices, type VertexRef } from '../sharedVertices.js';
 
 export interface RemoveVertexParams {
   readonly surface: Surface;
   readonly measurementId: MeasurementId;
   readonly vertexIndex: number;
+  /** PD-024 — remove every exactly coincident vertex of other shapes too (default). `false` is the
+   * Ctrl/⌘+Alt+click "this shape only" escape hatch. */
+  readonly linked?: boolean;
 }
 
 /**
@@ -31,20 +35,33 @@ export function removeVertexCommand(params: RemoveVertexParams): Command<Surface
     throw new Error(`removeVertexCommand: measurement '${params.measurementId}' is locked`);
   }
 
+  // PD-024 / INV-19 — see editVertex.ts; a shared vertex is deleted from every shape that has it,
+  // all-or-nothing: a locked participant, or one the deletion would leave invalid, refuses it whole.
+  const linked: readonly VertexRef[] = params.linked === false ? [] : findLinkedVertices(before, params.measurementId, params.vertexIndex);
+  for (const ref of linked) {
+    if (findMeasurement(before, ref.measurementId)?.measurement.locked) {
+      throw new Error(`removeVertexCommand: linked measurement '${ref.measurementId}' is locked`);
+    }
+  }
+  const participants: readonly VertexRef[] = [{ measurementId: params.measurementId, vertexIndex: params.vertexIndex }, ...linked];
+
   return {
     target: before.id,
     label: 'RemoveVertex',
     do: () => {
-      const result = removeVertex(found.measurement.shape, params.vertexIndex);
-      if (!result.ok) throw new Error(`removeVertexCommand: ${result.reason}`);
-      // PO request (per-vertex annotation, entities.ts): the removed vertex's label (if any) is
-      // discarded along with it, and every label after it shifts down to stay attached to the
-      // same vertex it was labeling.
-      const vertexLabels = removeLabelAt(found.measurement.vertexLabels, params.vertexIndex);
-      const updated = withVertexLabels({ ...found.measurement, shape: result.value }, vertexLabels);
+      const edited = participants.reduce((surface, ref) => {
+        const measurement = findMeasurement(surface, ref.measurementId)!.measurement;
+        const result = removeVertex(measurement.shape, ref.vertexIndex);
+        if (!result.ok) throw new Error(`removeVertexCommand: ${result.reason}`);
+        // PO request (per-vertex annotation, entities.ts): the removed vertex's label (if any) is
+        // discarded along with it, and every label after it shifts down to stay attached to the
+        // same vertex it was labeling.
+        const vertexLabels = removeLabelAt(measurement.vertexLabels, ref.vertexIndex);
+        return replaceMeasurement(surface, ref.measurementId, withVertexLabels({ ...measurement, shape: result.value }, vertexLabels));
+      }, before);
       // PD-021 — see editVertex.ts; removing a vertex changes the part's area, so its Split group
       // (if any) redistributes to keep summing to the parent's total.
-      return rebalanceSplitGroups(replaceMeasurement(before, params.measurementId, updated), params.measurementId);
+      return participants.reduce((surface, ref) => rebalanceSplitGroups(surface, ref.measurementId), edited);
     },
     undo: () => before,
     event: { type: 'MeasurementShapeEdited', surfaceId: before.id, measurementId: params.measurementId },

@@ -512,4 +512,33 @@ describe('PD-024 — linked vertex drag', () => {
     pointerDown({ x: 100, y: 40 }, { ...NO_MOD, ctrlKey: true }, 'left');
     expect(get(vertexDrag)?.kind).toBe('edge');
   });
+
+  const ALT = { ...NO_MOD, altKey: true };
+
+  it('Alt+click on a shared vertex removes it from both shapes in one undoable step', () => {
+    pointerDown({ x: 100, y: 0 }, ALT, 'left');
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+    undo();
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('Ctrl/Cmd+Alt+click removes the vertex from the selected shape only', () => {
+    pointerDown({ x: 100, y: 0 }, { ...ALT, ctrlKey: true }, 'left');
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('Alt+click is silently rejected when a neighbour would drop below 3 vertices', () => {
+    createPolygon('tri', [{ x: 100, y: 100 }, { x: 150, y: 150 }, { x: 100, y: 150 }]);
+    expect(() => pointerDown({ x: 100, y: 100 }, ALT, 'left')).not.toThrow();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('Alt+click is silently rejected when a neighbour is locked', () => {
+    setMeasurementLocked('right', true);
+    expect(() => pointerDown({ x: 100, y: 0 }, ALT, 'left')).not.toThrow();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+  });
 });

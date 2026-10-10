@@ -57,8 +57,9 @@ const MOVE_HIT_TOLERANCE = 8; // only matters for open shapes (Line) — closed 
 interface PointerModifiers {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
-  /** PD-024 — Ctrl (Windows/Linux) or ⌘ (macOS) held while a vertex or edge drag starts detaches
-   * it: only the selected shape changes, not the neighbours sharing that vertex or edge. */
+  /** PD-024 — Ctrl (Windows/Linux) or ⌘ (macOS) held while a vertex/edge drag starts, or with
+   * Alt+click deletion, detaches the gesture: only the selected shape changes, not the neighbours
+   * sharing that vertex or edge. */
   readonly ctrlKey?: boolean;
   readonly metaKey?: boolean;
 }
@@ -180,19 +181,22 @@ export function pointerDown(point: Point, modifiers: PointerModifiers, measureme
   if (shape.type === 'polygon' || shape.type === 'curve' || shape.type === 'freehand') {
     const vertexIndex = findVertexAt(point, shape, VERTEX_HIT_TOLERANCE);
     if (vertexIndex !== null) {
-      if (modifiers.altKey) {
-        const result = removeVertex(shape, vertexIndex);
-        if (result.ok) executeCommand((surface) => removeVertexCommand({ surface, measurementId, vertexIndex }));
-        // result.ok === false (too few vertices / would self-intersect) — 18 §6 silent rejection.
-        return;
-      }
-      // PD-024 — the neighbours sharing this vertex move with it unless Ctrl/⌘ detaches the drag.
-      // A locked neighbour blocks the linked drag outright (the command would refuse it anyway),
-      // the same silent no-op as trying to drag a locked shape.
+      // PD-024 — the neighbours sharing this vertex are moved/deleted with it unless Ctrl/⌘
+      // detaches the gesture. A locked neighbour blocks the linked gesture outright (the command
+      // would refuse it anyway), the same silent no-op as trying to edit a locked shape.
       const detached = !!(modifiers.ctrlKey || modifiers.metaKey);
       const surface = get(activeSurface);
       const linked = detached || !surface ? [] : findLinkedVertices(surface, measurementId, vertexIndex);
       if (linked.some((ref) => findMeasurementEntity(ref.measurementId)?.locked)) return;
+
+      if (modifiers.altKey) {
+        // Every participant must survive the deletion (too few vertices / would self-intersect),
+        // or nothing happens — 18 §6 silent rejection, checked here because the command throws.
+        const allOk = removeVertex(shape, vertexIndex).ok &&
+          linked.every((ref) => removeVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.vertexIndex).ok);
+        if (allOk) executeCommand((surface) => removeVertexCommand({ surface, measurementId, vertexIndex, linked: !detached }));
+        return;
+      }
       try {
         const preview = editVertex(shape, vertexIndex, point);
         const linkedPreviews = linked.map((ref) => ({

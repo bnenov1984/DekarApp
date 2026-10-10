@@ -1628,4 +1628,76 @@ describe('PD-024 — shared vertices (INV-19, T-INV-19)', () => {
     expect(() => insertVertex(stack, sideBySide(), 'left', 1, [25, 5])).toThrow(/self-intersect/);
     expect(stack.undoDepth).toBe(0);
   });
+
+  function deleteVertex(stack: CommandStack, surface: Surface, id: string, at: [number, number], linked?: boolean): Surface {
+    return stack.execute<Surface>(
+      removeVertexCommand({ surface, measurementId: id, vertexIndex: indexAt(surface, id, ...at), ...(linked === undefined ? {} : { linked }) }),
+    );
+  }
+
+  it('delete: a shared vertex is removed from every shape that has it; undo is atomic', () => {
+    const stack = new CommandStack();
+    const initial = sideBySide();
+    const removed = deleteVertex(stack, initial, 'left', [10, 0]);
+    expect(vertices(removed, 'left')).toEqual([{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]);
+    expect(vertices(removed, 'right')).toEqual([{ x: 20, y: 0 }, { x: 20, y: 10 }, { x: 10, y: 10 }]);
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(removed);
+  });
+
+  it('delete: on a Split boundary both parts lose the vertex, the parent keeps its corner', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left, right } = sides(afterSplit);
+    const removed = deleteVertex(stack, afterSplit, right, [10, 0]);
+    expect(hasVertexAt(removed, left, 10, 0)).toBe(false);
+    expect(hasVertexAt(removed, right, 10, 0)).toBe(false);
+    expect(findMeasurement(removed, 'parcel')).toEqual(findMeasurement(afterSplit, 'parcel'));
+  });
+
+  it('delete: vertex labels shift in every shape that lost the vertex (INV-17)', () => {
+    const label = (text: string) => ({ text, color: '#1565C0' });
+    const initial = patch(patch(sideBySide(), 'left', { vertexLabels: ['A', 'B', 'C', 'D'].map(label) }), 'right', {
+      vertexLabels: ['P', 'Q', 'R', 'S'].map(label),
+    });
+    const removed = deleteVertex(new CommandStack(), initial, 'left', [10, 0]);
+    expect(findMeasurement(removed, 'left')!.measurement.vertexLabels).toEqual([label('A'), label('C'), label('D')]);
+    expect(findMeasurement(removed, 'right')!.measurement.vertexLabels).toEqual([label('Q'), label('R'), label('S')]);
+  });
+
+  it('delete: linked: false (Ctrl/Cmd+Alt) removes it from the source shape only', () => {
+    const removed = deleteVertex(new CommandStack(), sideBySide(), 'left', [10, 0], false);
+    expect(vertices(removed, 'left')).toHaveLength(3);
+    expect(vertices(removed, 'right')).toHaveLength(4);
+  });
+
+  it('delete: refused entirely when a neighbour would drop below 3 vertices', () => {
+    const stack = new CommandStack();
+    const triangle: Measurement = {
+      ...makeSquareMeasurement('right'),
+      shape: { type: 'polygon', vertices: [{ x: 10, y: 0 }, { x: 20, y: 0 }, { x: 10, y: 10 }] },
+    };
+    const initial = makeTestSurface([makeSquareMeasurement('left'), triangle]);
+    expect(() => deleteVertex(stack, initial, 'left', [10, 0])).toThrow(/TOO_FEW_VERTICES/);
+    expect(stack.undoDepth).toBe(0);
+  });
+
+  it('delete: refused entirely when a neighbour would self-intersect', () => {
+    const stack = new CommandStack();
+    // removing (10,0) leaves the chord (20,10)→(30,0), which crosses the notch edge (30,20)→(21,5)
+    const notched: Measurement = {
+      ...makeSquareMeasurement('right'),
+      shape: { type: 'polygon', vertices: [{ x: 20, y: 10 }, { x: 10, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 21, y: 5 }] },
+    };
+    const initial = makeTestSurface([makeSquareMeasurement('left'), notched]);
+    expect(isSimplePolygon(vertices(initial, 'right'))).toBe(true);
+    expect(() => deleteVertex(stack, initial, 'left', [10, 0])).toThrow(/WOULD_SELF_INTERSECT/);
+    expect(stack.undoDepth).toBe(0);
+  });
+
+  it('delete: a locked neighbour refuses the whole delete', () => {
+    const stack = new CommandStack();
+    expect(() => deleteVertex(stack, patch(sideBySide(), 'right', { locked: true }), 'left', [10, 0])).toThrow(/locked/);
+    expect(stack.undoDepth).toBe(0);
+  });
 });
