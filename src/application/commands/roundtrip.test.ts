@@ -1332,7 +1332,7 @@ describe('PD-021 — Split group conserves the parent manual area', () => {
   });
 });
 
-describe('PD-024 — linked vertex move (INV-19, T-INV-19)', () => {
+describe('PD-024 — shared vertices (INV-19, T-INV-19)', () => {
   // 20x10 parcel split down x=10 into two 10x10 parts. The boundary vertices (10,0) and (10,10)
   // exist once in each part; the outer corners also exist in the parcel. Which child id ends up on
   // which side is the split algorithm's business, so tests ask `sides()` instead of assuming.
@@ -1540,5 +1540,92 @@ describe('PD-024 — linked vertex move (INV-19, T-INV-19)', () => {
         },
       ),
     );
+  });
+
+  // Two 10x10 squares side by side: left's edge 1 (10,0)→(10,10) is right's closing edge 3
+  // (10,10)→(10,0), so a shared edge is matched in the opposite direction and across the wrap.
+  function sideBySide(): Surface {
+    return makeTestSurface([makeSquareMeasurement('left'), makeSquareMeasurement('right', 10)]);
+  }
+
+  function insertVertex(stack: CommandStack, surface: Surface, id: string, edgeIndex: number, at: [number, number], linked?: boolean): Surface {
+    return stack.execute<Surface>(addVertexCommand({ surface, measurementId: id, edgeIndex, position: { x: at[0], y: at[1] }, ...(linked === undefined ? {} : { linked }) }));
+  }
+
+  it('insert: a vertex added on a shared edge is added to both shapes, at the right index in each; undo is atomic', () => {
+    const stack = new CommandStack();
+    const initial = sideBySide();
+    const inserted = insertVertex(stack, initial, 'left', 1, [10, 4]);
+    expect(vertices(inserted, 'left')).toEqual([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 4 }, { x: 10, y: 10 }, { x: 0, y: 10 }]);
+    expect(vertices(inserted, 'right')).toEqual([{ x: 10, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 4 }]);
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(inserted);
+  });
+
+  it('insert: vertex labels shift in every shape that gained the vertex (INV-17)', () => {
+    const label = (text: string) => ({ text, color: '#1565C0' });
+    const initial = patch(patch(sideBySide(), 'left', { vertexLabels: ['A', 'B', 'C', 'D'].map(label) }), 'right', {
+      vertexLabels: [null, label('Q'), label('R'), label('S')],
+    });
+    // from the right shape's side this time: its closing edge 3 is the shared one, so its new
+    // vertex is appended after every labelled one
+    const inserted = insertVertex(new CommandStack(), initial, 'right', 3, [10, 4]);
+    expect(findMeasurement(inserted, 'left')!.measurement.vertexLabels).toEqual([label('A'), label('B'), null, label('C'), label('D')]);
+    expect(findMeasurement(inserted, 'right')!.measurement.vertexLabels).toEqual([null, label('Q'), label('R'), label('S')]);
+    expect(vertices(inserted, 'left')[2]).toEqual({ x: 10, y: 4 });
+  });
+
+  it('insert: the new vertex is shared, so a following drag moves both shapes', () => {
+    const stack = new CommandStack();
+    const inserted = insertVertex(stack, sideBySide(), 'left', 1, [10, 4]);
+    const moved = moveVertex(stack, inserted, 'left', [10, 4], [13, 4]);
+    expect(hasVertexAt(moved, 'right', 13, 4)).toBe(true);
+    expect(shoelaceArea(vertices(moved, 'left')) + shoelaceArea(vertices(moved, 'right'))).toBeCloseTo(200, 9);
+  });
+
+  it('insert: on a Split boundary both parts gain the vertex, the parent does not', () => {
+    const stack = new CommandStack();
+    const afterSplit = split(stack);
+    const { left, right } = sides(afterSplit);
+    const from = indexAt(afterSplit, left, 10, 0);
+    const to = indexAt(afterSplit, left, 10, 10);
+    // the shared edge is whichever of left's edges joins its two boundary vertices
+    const n = vertices(afterSplit, left).length;
+    const edgeIndex = (from + 1) % n === to ? from : to;
+    const inserted = insertVertex(stack, afterSplit, left, edgeIndex, [10, 6]);
+    expect(hasVertexAt(inserted, left, 10, 6)).toBe(true);
+    expect(hasVertexAt(inserted, right, 10, 6)).toBe(true);
+    expect(findMeasurement(inserted, 'parcel')).toEqual(findMeasurement(afterSplit, 'parcel'));
+  });
+
+  it('insert: linked: false (Ctrl/Cmd) inserts into the source shape only', () => {
+    const inserted = insertVertex(new CommandStack(), sideBySide(), 'left', 1, [10, 4], false);
+    expect(vertices(inserted, 'left')).toHaveLength(5);
+    expect(vertices(inserted, 'right')).toHaveLength(4);
+  });
+
+  it('insert: a curve lying along the edge is never touched (PD-024 — curves share vertices, not edges)', () => {
+    const curve: Measurement = {
+      ...makeSquareMeasurement('curve'),
+      shape: { type: 'curve', controlPoints: [{ x: 10, y: 0 }, { x: 10, y: 10 }], closed: false },
+    };
+    const initial = makeTestSurface([makeSquareMeasurement('left'), curve]);
+    const inserted = insertVertex(new CommandStack(), initial, 'left', 1, [10, 4]);
+    expect(vertices(inserted, 'left')).toHaveLength(5);
+    expect(findMeasurement(inserted, 'curve')).toEqual(findMeasurement(initial, 'curve'));
+  });
+
+  it('insert: a locked neighbour refuses the whole insert; the Surface is unchanged', () => {
+    const stack = new CommandStack();
+    const initial = patch(sideBySide(), 'right', { locked: true });
+    expect(() => insertVertex(stack, initial, 'left', 1, [10, 4])).toThrow(/locked/);
+    expect(stack.undoDepth).toBe(0);
+  });
+
+  it('insert: an off-edge position that self-intersects any participant is rejected entirely', () => {
+    const stack = new CommandStack();
+    // (25,5) bulges the left square fine but folds the right square's closing edge across its own edge 1
+    expect(() => insertVertex(stack, sideBySide(), 'left', 1, [25, 5])).toThrow(/self-intersect/);
+    expect(stack.undoDepth).toBe(0);
   });
 });

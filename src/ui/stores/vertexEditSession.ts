@@ -18,7 +18,7 @@ import { removeVertexCommand } from '../../application/commands/removeVertex.js'
 import { resizeRectangleCommand } from '../../application/commands/resizeRectangle.js';
 import { resizeCircleCommand } from '../../application/commands/resizeCircle.js';
 import { translateMeasurementCommand } from '../../application/commands/translateMeasurement.js';
-import { findLinkedVertices } from '../../application/sharedVertices.js';
+import { findLinkedVertices, findSharedEdges } from '../../application/sharedVertices.js';
 import { activeSurface, executeCommand } from './studioSession.js';
 import { snapEnabled } from './drawingSession.js';
 
@@ -57,8 +57,8 @@ const MOVE_HIT_TOLERANCE = 8; // only matters for open shapes (Line) — closed 
 interface PointerModifiers {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
-  /** PD-024 — Ctrl (Windows/Linux) or ⌘ (macOS) held while a vertex drag starts detaches it:
-   * only the selected shape's vertex moves, not the coincident vertices of its neighbours. */
+  /** PD-024 — Ctrl (Windows/Linux) or ⌘ (macOS) held while a vertex or edge drag starts detaches
+   * it: only the selected shape changes, not the neighbours sharing that vertex or edge. */
   readonly ctrlKey?: boolean;
   readonly metaKey?: boolean;
 }
@@ -68,6 +68,13 @@ interface PointerModifiers {
 export interface LinkedPreview {
   readonly measurementId: MeasurementId;
   readonly vertexIndex: number;
+  readonly previewShape: Shape;
+}
+
+/** PD-024 — a neighbour sharing the dragged edge, which gains the same new vertex. */
+export interface LinkedEdgePreview {
+  readonly measurementId: MeasurementId;
+  readonly edgeIndex: number;
   readonly previewShape: Shape;
 }
 
@@ -86,6 +93,9 @@ interface EdgeDrag {
   readonly edgeIndex: number;
   readonly lastValidPosition: Point;
   readonly previewShape: Shape;
+  /** Fixed at pointerDown, like VertexDrag's; empty when detached or the edge isn't shared. */
+  readonly linkedPreviews: readonly LinkedEdgePreview[];
+  readonly detached: boolean;
 }
 
 interface CornerDrag {
@@ -198,9 +208,19 @@ export function pointerDown(point: Point, modifiers: PointerModifiers, measureme
 
     const edgeIndex = findEdgeAt(point, shape, EDGE_HIT_TOLERANCE);
     if (edgeIndex !== null) {
+      // PD-024 — a shared edge gains the new vertex in every shape that has it; same Ctrl/⌘
+      // detach and locked-neighbour rules as the vertex drag above.
+      const detached = !!(modifiers.ctrlKey || modifiers.metaKey);
+      const surface = get(activeSurface);
+      const shared = detached || !surface ? [] : findSharedEdges(surface, measurementId, edgeIndex);
+      if (shared.some((ref) => findMeasurementEntity(ref.measurementId)?.locked)) return;
       try {
         const preview = addVertex(shape, edgeIndex, point);
-        vertexDrag.set({ kind: 'edge', edgeIndex, lastValidPosition: point, previewShape: preview });
+        const linkedPreviews = shared.map((ref) => ({
+          ...ref,
+          previewShape: addVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.edgeIndex, point),
+        }));
+        vertexDrag.set({ kind: 'edge', edgeIndex, lastValidPosition: point, previewShape: preview, linkedPreviews, detached });
       } catch {
         // ignore — same silent-rejection pattern
       }
@@ -267,7 +287,7 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
     return;
   }
 
-  const linkedIds = drag.kind === 'vertex' ? drag.linkedPreviews.map((p) => p.measurementId) : [];
+  const linkedIds = drag.kind === 'vertex' || drag.kind === 'edge' ? drag.linkedPreviews.map((p) => p.measurementId) : [];
   const snapped = resolveSnap(point, modifiers, new Set([measurementId, ...linkedIds]));
 
   try {
@@ -282,7 +302,11 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
       vertexDrag.set({ ...drag, lastValidPosition: snapped, previewShape: preview, linkedPreviews });
     } else if (drag.kind === 'edge') {
       const preview = addVertex(shape, drag.edgeIndex, snapped);
-      vertexDrag.set({ kind: 'edge', edgeIndex: drag.edgeIndex, lastValidPosition: snapped, previewShape: preview });
+      const linkedPreviews = drag.linkedPreviews.map((linked) => ({
+        ...linked,
+        previewShape: addVertex(findMeasurementEntity(linked.measurementId)!.shape, linked.edgeIndex, snapped),
+      }));
+      vertexDrag.set({ ...drag, lastValidPosition: snapped, previewShape: preview, linkedPreviews });
     } else if (drag.kind === 'corner') {
       if (shape.type !== 'rectangle') return;
       const preview = resizeRectangleCorner(shape, drag.corner, snapped);
@@ -310,7 +334,7 @@ export function pointerUp(): void {
     );
   } else if (drag.kind === 'edge') {
     executeCommand((surface) =>
-      addVertexCommand({ surface, measurementId, edgeIndex: drag.edgeIndex, position: drag.lastValidPosition }),
+      addVertexCommand({ surface, measurementId, edgeIndex: drag.edgeIndex, position: drag.lastValidPosition, linked: !drag.detached }),
     );
   } else if (drag.kind === 'corner') {
     executeCommand((surface) =>

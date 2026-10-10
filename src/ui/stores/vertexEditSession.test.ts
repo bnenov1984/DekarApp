@@ -467,4 +467,49 @@ describe('PD-024 — linked vertex drag', () => {
     pointerUp();
     expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 103, y: 2 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
   });
+
+  // left's edge 1 (100,0)→(100,100) is right's closing edge 3 (100,100)→(100,0).
+  it('dragging a shared edge previews the new vertex in every shape sharing it', () => {
+    pointerDown({ x: 100, y: 40 }, NO_MOD, 'left');
+    pointerMove({ x: 130, y: 40 }, NO_MOD);
+    const drag = get(vertexDrag);
+    expect(drag?.kind).toBe('edge');
+    if (drag?.kind !== 'edge') return;
+    expect(drag.linkedPreviews).toEqual([
+      {
+        measurementId: 'right',
+        edgeIndex: 3,
+        previewShape: { type: 'polygon', vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }, { x: 130, y: 40 }] },
+      },
+    ]);
+  });
+
+  it('pointerUp after a shared-edge drag inserts the vertex into both shapes in one undoable step', () => {
+    pointerDown({ x: 100, y: 40 }, NO_MOD, 'left');
+    pointerMove({ x: 130, y: 40 }, NO_MOD);
+    pointerUp();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 130, y: 40 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }, { x: 130, y: 40 }] });
+    undo();
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('Ctrl/Cmd+drag on a shared edge inserts into the selected shape only', () => {
+    const detach = { ...NO_MOD, metaKey: true };
+    pointerDown({ x: 100, y: 40 }, detach, 'left');
+    pointerMove({ x: 130, y: 40 }, detach);
+    const drag = get(vertexDrag);
+    if (drag?.kind === 'edge') expect(drag.linkedPreviews).toEqual([]);
+    pointerUp();
+    expect(measurementShape('left')).toMatchObject({ vertices: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 130, y: 40 }, { x: 100, y: 100 }, { x: 0, y: 100 }] });
+    expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
+  });
+
+  it('a locked neighbour blocks a shared-edge drag unless Ctrl/Cmd detaches it', () => {
+    setMeasurementLocked('right', true);
+    pointerDown({ x: 100, y: 40 }, NO_MOD, 'left');
+    expect(get(vertexDrag)).toBeNull();
+    pointerDown({ x: 100, y: 40 }, { ...NO_MOD, ctrlKey: true }, 'left');
+    expect(get(vertexDrag)?.kind).toBe('edge');
+  });
 });

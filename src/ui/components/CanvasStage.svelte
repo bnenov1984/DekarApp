@@ -273,7 +273,7 @@
       const editing = surface.layers.flatMap((l) => l.measurements).find((m) => m.id === $selectedMeasurementId);
       if (editing && !editing.locked) {
         if ($vertexDrag) {
-          if ($vertexDrag.kind === 'vertex') {
+          if ($vertexDrag.kind === 'vertex' || $vertexDrag.kind === 'edge') {
             for (const linked of $vertexDrag.linkedPreviews) drawLinkedVertexPreview(ctx, linked.previewShape, readAccentColor());
           }
           drawVertexEditPreview(ctx, $vertexDrag.previewShape, readAccentColor(), $viewport.scale);
