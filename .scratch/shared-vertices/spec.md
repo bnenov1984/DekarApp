@@ -228,12 +228,11 @@ insertion is skipped rather than refusing the Split (ticket 05).
 Found along the way:
 - Fixed: a still Alt+click deleted nothing (`1e7e02d`). This dates from the selection/drag
   unification, not from PD-024.
-- **Open — code deviates from PD-024 §4.** "When several points coincide, the selected
-  measurement wins" isn't implemented. CanvasStage's mousedown reselects the topmost hit
-  (`findMeasurementAt`) before any drag starts, so pressing a shared vertex of the selected shape
-  switches the selection to whichever coincident shape is on top. A linked move gives the same
-  result either way, but Ctrl/⌘+drag (and Ctrl/⌘+Alt+click) then acts on the topmost shape, not the
-  selected one. Part-over-parent holds only because parts are appended after their parent. Needs
-  its own ticket. Not fixed here.
+- **Fixed — code deviated from PD-024 §4** (`e7090c9`). CanvasStage's mousedown always reselected
+  the topmost hit, so pressing a vertex the selected shape shared with a neighbour switched the
+  selection, and Ctrl/⌘+drag detached the wrong shape. A press on a handle of the selected shape
+  (vertex, edge, corner, radius handle; `grabsSelectedHandle`) now keeps it selected; a press on
+  its body still selects the topmost shape. Edges are included beyond §4's "points", because a
+  Ctrl/⌘ edge insert has the same problem. Checked in Chrome on the T-junction case.
 - Not changed: the parent's area label sits at its centroid, which for a two-way split is the middle
   of the shared boundary, so a press there grabs the label instead of the edge (ticket 03).
