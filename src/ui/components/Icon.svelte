@@ -23,6 +23,7 @@
     | 'circle'
     | 'freehand'
     | 'line'
+    | 'split'
     | 'user';
   export let size = 16;
 </script>
@@ -92,6 +93,9 @@
     <circle cx="6" cy="18" r="2" />
     <circle cx="18" cy="6" r="2" />
     <path d="M7.4 16.6 16.6 7.4" />
+  {:else if name === 'split'}
+    <rect x="4" y="5" width="16" height="14" rx="1.2" />
+    <path d="M12 2.5v19" stroke-dasharray="2.6 2.4" />
   {:else if name === 'user'}
     <circle cx="12" cy="8" r="3.6" />
     <path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5" />

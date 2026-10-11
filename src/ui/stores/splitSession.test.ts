@@ -17,7 +17,10 @@ import {
   openSplitConfig,
   closeSplitConfig,
   confirmSplitParts,
+  canStartSplit,
+  toggleSplitTool,
 } from './splitSession.js';
+import { activeTool, setTool } from './drawingSession.js';
 import type { Surface } from '../../core/domain/entities.js';
 
 // Split slice — same integration-seam approach as the other *Session.test.ts files: exercised
@@ -104,6 +107,61 @@ describe('starting and cancelling', () => {
     pointerDown({ x: 0, y: 0 });
     pointerMove({ x: 1, y: 1 });
     expect(get(splitLinePoints)).toHaveLength(0);
+  });
+});
+
+// 15 §2.2 / W1 (Photoshop layout, 2026-10-11) — the tool bar's Split slot: the same manual
+// line split as the `X` key, disabled (never hidden) when the selection can't be split.
+describe('tool bar Split slot (canStartSplit / toggleSplitTool)', () => {
+  it('canStartSplit is true only for an unlocked Polygon while nothing is being split', () => {
+    expect(canStartSplit(null)).toBe(false);
+    createSquare('parcel');
+    expect(canStartSplit('parcel')).toBe(true);
+    startSplit('parcel');
+    expect(canStartSplit('parcel')).toBe(false);
+    cancelSplit();
+    setMeasurementLocked('parcel', true);
+    expect(canStartSplit('parcel')).toBe(false);
+  });
+
+  it('canStartSplit is false for a non-Polygon shape and an unknown id', () => {
+    executeCommand((surface) =>
+      createMeasurementCommand({
+        surface,
+        layerId: 'layer1',
+        measurementId: 'r1',
+        shapeParams: { type: 'rectangle', origin: { x: 0, y: 0 }, width: 10, height: 10 },
+        identity: { name: 'Rect', color: '#1565C0' },
+        provenance: 'Manual',
+      }),
+    );
+    expect(canStartSplit('r1')).toBe(false);
+    expect(canStartSplit('missing')).toBe(false);
+  });
+
+  it('toggleSplitTool starts a manual split and leaves an armed drawing tool', () => {
+    createSquare('parcel');
+    setTool('polygon');
+    toggleSplitTool('parcel');
+    expect(get(splittingId)).toBe('parcel');
+    expect(get(activeTool)).toBeNull();
+  });
+
+  it('toggleSplitTool cancels a split already in progress (second click)', () => {
+    createSquare('parcel');
+    toggleSplitTool('parcel');
+    pointerDown({ x: 5, y: -1 });
+    toggleSplitTool('parcel');
+    expect(get(splittingId)).toBeNull();
+    expect(get(splitLinePoints)).toHaveLength(0);
+  });
+
+  it('toggleSplitTool is a no-op without a splittable selection, leaving the armed tool alone', () => {
+    setTool('rectangle');
+    toggleSplitTool(null);
+    expect(get(splittingId)).toBeNull();
+    expect(get(activeTool)).toBe('rectangle');
+    setTool(null);
   });
 });
 

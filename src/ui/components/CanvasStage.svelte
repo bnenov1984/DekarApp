@@ -120,7 +120,6 @@
   import type { DrawingDraft } from '../stores/drawingSession.js';
   import MeasurementChip from './MeasurementChip.svelte';
   import ScaleBar from './ScaleBar.svelte';
-  import ToolDock from './ToolDock.svelte';
 
   interface ChipData {
     readonly id: string;
@@ -1041,7 +1040,7 @@
   ></canvas>
   {#if showEmptyCanvasHint}
     <p class="empty-hint" data-testid="empty-canvas-hint">
-      Import a plan, or choose a tool below to start drawing
+      Import a plan, or choose a tool on the left to start drawing
     </p>
   {/if}
   {#each chips as chip (chip.id)}
@@ -1118,7 +1117,6 @@
     {zoomPercent}%
   </button>
   <ScaleBar />
-  <ToolDock />
 </div>
 
 <style>
@@ -1254,9 +1252,8 @@
     cursor: pointer;
   }
 
-  /* PO request (zoom %) — visually secondary (small, muted), non-obstructive corner, same
-     "floating chrome over the canvas" language as ToolDock but far enough away not to compete
-     with it (ToolDock is bottom-center). */
+  /* PO request (zoom %) — visually secondary (small, muted), non-obstructive corner. Moves to the
+     status bar in studio-layout ticket 05. */
   .zoom-indicator {
     position: absolute;
     right: 12px;

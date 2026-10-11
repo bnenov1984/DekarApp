@@ -1,13 +1,15 @@
 <script lang="ts">
-  // docs/16_DESIGN_SYSTEM.md §3.1 ToolDock — "плаващ долен-централен контейнер... Слотове ≤10...
-  // role=toolbar, стрелки за навигация между слотовете." Pan/Curve/AI slots are still intentionally
-  // absent this slice (docs/UI_CHECKPOINT_REVIEW.md next-slice scope) — the dock grows additively
-  // as those capabilities land; 15 §11's "never changes position/composition between breakpoints"
-  // invariant is about not *redesigning* the dock, not about shipping every slot on day one. Import
-  // moved out to the top bar (15 §2.2, 2026-10-11): it is a file action, not a drawing tool.
+  // docs/16_DESIGN_SYSTEM.md §3.1 ToolBar (Photoshop layout, 15 §2.2/W1, 2026-10-11) — a vertical
+  // bar docked to the left edge, full height between the top bar and the status bar, icons only.
+  // It replaced the floating bottom-centre dock (15 D1, superseded). Slots: the drawing tools, a
+  // divider, then Split — the same manual line split as the `X` key, disabled (never hidden) when
+  // the selection can't be split, so no slot ever appears or disappears. Import is a file action
+  // and lives in the top bar (ImportButton.svelte). Curve/AI slots are still absent: the bar grows
+  // additively as those capabilities land.
   import { activeTool, setTool, type DrawingTool } from '../stores/drawingSession.js';
   import { calibrating } from '../stores/calibrationSession.js';
-  import { splittingId } from '../stores/splitSession.js';
+  import { splittingId, canStartSplit, toggleSplitTool } from '../stores/splitSession.js';
+  import { activeSurface, selectedMeasurementId } from '../stores/studioSession.js';
   import Icon from './Icon.svelte';
 
   interface ToolSpec {
@@ -45,20 +47,31 @@
     setTool(id, { keepArmed: event.shiftKey });
   }
 
-  // 16 §3.1 a11y: arrow-key navigation between slots (roving focus, toolbar pattern).
+  // Re-evaluated whenever the Surface (lock, shape type), the selection or the split state changes.
+  $: splitEnabled = $splittingId !== null || ($activeSurface !== null && canStartSplit($selectedMeasurementId));
+
+  // 16 §3.1 a11y: arrow-key navigation between slots (roving focus, vertical toolbar pattern).
   function onKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
     const buttons = Array.from((event.currentTarget as HTMLElement).querySelectorAll('button'));
     const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (currentIndex === -1) return;
-    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
     const next = buttons[(currentIndex + delta + buttons.length) % buttons.length];
     next?.focus();
   }
 </script>
 
-<div class="tool-dock" role="toolbar" tabindex="-1" aria-label="Drawing tools" data-testid="tool-dock" on:keydown={onKeydown}>
+<div
+  class="tool-dock"
+  role="toolbar"
+  tabindex="-1"
+  aria-label="Drawing tools"
+  aria-orientation="vertical"
+  data-testid="tool-dock"
+  on:keydown={onKeydown}
+>
   {#each TOOLS as tool (tool.id)}
     <button
       type="button"
@@ -74,20 +87,32 @@
       <Icon name={tool.icon} size={18} />
     </button>
   {/each}
+  <span class="divider" aria-hidden="true"></span>
+  <button
+    type="button"
+    class="slot"
+    class:active={$splittingId !== null}
+    title={splitEnabled ? 'Split (X) — draw a line across the selected polygon' : 'Split (X) — select an unlocked polygon first'}
+    aria-label="Split"
+    aria-pressed={$splittingId !== null}
+    disabled={$calibrating || !splitEnabled}
+    data-testid="tool-split"
+    on:click={() => toggleSplitTool($selectedMeasurementId)}
+  >
+    <Icon name="split" size={18} />
+  </button>
 </div>
 
 <style>
   .tool-dock {
-    position: absolute;
-    left: 50%;
-    bottom: 16px;
-    transform: translateX(-50%);
+    flex: 0 0 44px;
     display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: 2px;
-    padding: 4px;
-    background: var(--af-surface-raised);
-    border-radius: var(--af-radius-lg);
-    box-shadow: var(--af-shadow-e2);
+    padding: 6px 0;
+    background: var(--af-surface-panel);
+    border-right: 1px solid var(--af-border-subtle);
   }
 
   .slot {
@@ -120,5 +145,12 @@
   .slot:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .divider {
+    width: 24px;
+    height: 1px;
+    margin: 4px 0;
+    background: var(--af-border-subtle);
   }
 </style>

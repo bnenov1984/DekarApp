@@ -6,6 +6,7 @@ import { splitIntoParts, type SplitDistribution } from '../../core/drawing/split
 import { splitCommand } from '../../application/commands/split.js';
 import { splitIntoPartsCommand } from '../../application/commands/splitIntoParts.js';
 import { activeSurface, executeCommand } from './studioSession.js';
+import { setTool } from './drawingSession.js';
 
 // docs/18_DRAWING_ENGINE.md §5 (PD-009) + docs/15_UX_SPECIFICATION.md §5 F7 — Split, triggered by
 // the already-reserved `X` shortcut (15 §13) on a selected Polygon. Click-to-place points build
@@ -76,6 +77,26 @@ export function pointerDown(point: Point): void {
 export function pointerMove(point: Point): void {
   if (!get(splittingId)) return;
   splitCursor.set(point);
+}
+
+/** 15 §2.2 / W1 (Photoshop layout, 2026-10-11) — whether the tool bar's Split slot is enabled:
+ * the selection is an unlocked Polygon (`startSplit`'s own contract) and nothing is being split
+ * yet. The slot is disabled, never hidden, when this is false. */
+export function canStartSplit(measurementId: MeasurementId | null): boolean {
+  return measurementId !== null && get(splittingId) === null && polygonShape(measurementId) !== null;
+}
+
+/** The tool bar's Split slot — the same manual line split as the `X` key. A second click cancels
+ * the split in progress, like clicking an active tool again. Starting leaves any armed drawing
+ * tool, since a split line and a drawing tool can't both take the canvas clicks. */
+export function toggleSplitTool(selectedId: MeasurementId | null): void {
+  if (get(splittingId) !== null) {
+    cancelSplit();
+    return;
+  }
+  if (selectedId === null || !canStartSplit(selectedId)) return;
+  setTool(null);
+  startSplit(selectedId);
 }
 
 /** 15 §5 F7 step 4 — `Enter` confirms. Silently a no-op if the line doesn't cross the boundary

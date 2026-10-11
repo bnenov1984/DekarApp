@@ -7,6 +7,7 @@
   import CalibrationBar from '../components/CalibrationBar.svelte';
   import ImportCalibrationBanner from '../components/ImportCalibrationBanner.svelte';
   import CanvasStage from '../components/CanvasStage.svelte';
+  import ToolDock from '../components/ToolDock.svelte';
   import MeasurementList from '../components/MeasurementList.svelte';
   import PropertyPanel from '../components/PropertyPanel.svelte';
   import StatusBar from '../components/StatusBar.svelte';
@@ -183,6 +184,7 @@
   <ImportCalibrationBanner />
   <CalibrationBar />
   <div class="main">
+    <ToolDock />
     <MeasurementList />
     <CanvasStage />
     <PropertyPanel />
