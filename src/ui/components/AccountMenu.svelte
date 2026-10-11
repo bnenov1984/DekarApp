@@ -1,8 +1,9 @@
 <script lang="ts">
   // docs/26_ADR/ADR-007 Phase 2 — the entire login/logout UI surface for the SaaS migration.
-  // Mounted once in App.svelte (like StorageErrorToast), never inside Studio/Home themselves —
-  // PD-014's Workspace Contract (Tool Dock, panel positions, keys, core flows) stays untouched,
-  // and PD-012's local-first promise holds: nobody has to touch this to draw and split parcels.
+  // Mounted as the last item of TopBar.svelte (15 §2.2, Photoshop layout, 2026-10-11) — it used to
+  // be mounted in App.svelte with `position: fixed` in the window corner, where it covered the top
+  // bar's Undo/Redo and collided with Export. PD-012's local-first promise holds: nobody has to
+  // touch this to draw and split parcels.
   import { authSession, authError, authPending, signIn, signUp, signOut, dismissAuthError } from '../stores/authSession.js';
   import { authAdapter } from '../stores/persistence.js';
   import {
@@ -186,9 +187,7 @@
 
 <style>
   .account-menu {
-    position: fixed;
-    top: 10px;
-    right: 12px;
+    position: relative;
     z-index: 900;
     font-size: 12.5px;
   }
@@ -197,13 +196,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px;
-    background: var(--af-surface-raised);
+    font: inherit;
+    font-size: 12.5px;
+    padding: 5px 12px;
+    background: none;
     border: 1px solid var(--af-border-subtle);
     border-radius: var(--af-radius-sm);
-    box-shadow: var(--af-shadow-e1);
     color: var(--af-ink-secondary);
-    font-weight: 550;
+    font-weight: 600;
     cursor: pointer;
     max-width: 200px;
   }

@@ -6,7 +6,6 @@
   import Home from './screens/Home.svelte';
   import Studio from './screens/Studio.svelte';
   import StorageErrorToast from './components/StorageErrorToast.svelte';
-  import AccountMenu from './components/AccountMenu.svelte';
   import { appState } from './stores/appState.js';
   import { initUnitPreference } from './stores/unitPreferenceSession.js';
   import { initAuthSession } from './stores/authSession.js';
@@ -23,4 +22,3 @@
   <Studio />
 {/if}
 <StorageErrorToast />
-<AccountMenu />

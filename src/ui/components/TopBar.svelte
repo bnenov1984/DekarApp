@@ -11,11 +11,18 @@
   //
   // PO follow-up (UX review, item B1 "undo/redo buttons") — canUndo/canRedo/undo/redo already
   // existed as session-wide stores (studioSession.ts) with no visible UI beyond Ctrl+Z/Y.
+  //
+  // 15 §2.2 (Photoshop layout, 2026-10-11) — items are grouped by kind, left to right: identity
+  // (logo, project name) · history (Undo/Redo) · spacer · file actions (Import, Export) · account.
+  // Every item is a flex child of the bar; nothing is positioned over it (the account menu used to
+  // be `position: fixed` in the window corner, where it covered Undo/Redo).
   import { canUndo, canRedo, undo, redo, activeSurface } from '../stores/studioSession.js';
   import { renameProject } from '../stores/appState.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
   import { buildMeasurementsCsv, csvFilename } from '../export/csvExport.js';
   import { tick } from 'svelte';
+  import ImportButton from './ImportButton.svelte';
+  import AccountMenu from './AccountMenu.svelte';
 
   export let projectName: string | null = null;
 
@@ -120,16 +127,6 @@
     {/if}
   {/if}
 
-  <button
-    type="button"
-    class="export-button"
-    disabled={!hasMeasurements}
-    on:click={onExportClick}
-    title={hasMeasurements ? 'Export measurements as CSV' : 'Nothing to export yet'}
-    data-testid="export-csv"
-  >
-    Export
-  </button>
   <div class="history-controls">
     <button
       type="button"
@@ -154,6 +151,21 @@
       ↷
     </button>
   </div>
+
+  <span class="spacer"></span>
+
+  <ImportButton />
+  <button
+    type="button"
+    class="export-button"
+    disabled={!hasMeasurements}
+    on:click={onExportClick}
+    title={hasMeasurements ? 'Export measurements as CSV' : 'Nothing to export yet'}
+    data-testid="export-csv"
+  >
+    Export
+  </button>
+  <AccountMenu />
 </header>
 
 <style>
@@ -217,8 +229,11 @@
     width: 200px;
   }
 
+  .spacer {
+    flex: 1;
+  }
+
   .export-button {
-    margin-left: auto;
     font: inherit;
     font-size: 12.5px;
     font-weight: 600;
