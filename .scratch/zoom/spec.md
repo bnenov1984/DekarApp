@@ -1,6 +1,6 @@
 # Zoom — wheel step, zoom over labels, zoom menu
 
-Status: ready-for-agent
+Status: resolved
 Type: spec
 Source: grilling session with the PO, 2026-10-11
 Docs: 15_UX_SPECIFICATION §2.2 (Zoom), §13 · 16_DESIGN_SYSTEM ZoomMenu (commit b94c9f9)
@@ -30,3 +30,7 @@ Docs: 15_UX_SPECIFICATION §2.2 (Zoom), §13 · 16_DESIGN_SYSTEM ZoomMenu (commi
 
 - 01 — Wheel step and zoom over labels
 - 02 — Zoom menu, typed %, `+ - 0` (blocked by 01)
+
+## Comments
+
+- 2026-10-12 — Both tickets done: 01 `afb8673`, 02 `faf6f3a`. Docs `b94c9f9`.
