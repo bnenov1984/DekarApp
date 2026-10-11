@@ -1002,17 +1002,19 @@
   // silently can't call `preventDefault()` (page would scroll along with the zoom). "Scrolling
   // outside the canvas retains normal page behaviour" (PO request) is automatic: this listener is
   // bound to the vector canvas element itself, so the browser never even dispatches it elsewhere.
+  // On the whole canvas-stage container, not just the <canvas> (15 §2.2, 2026-10-11): labels,
+  // live drawing labels and other HTML drawn over the canvas would otherwise swallow the wheel.
   function onWheel(event: WheelEvent): void {
     event.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    zoomWheel({ x: event.clientX - rect.left, y: event.clientY - rect.top }, event.deltaY);
+    zoomWheel({ x: event.clientX - rect.left, y: event.clientY - rect.top }, event.deltaY, event.deltaMode);
   }
 
   onMount(() => {
     resizeToContainer();
     resizeObserver = new ResizeObserver(() => resizeToContainer());
     resizeObserver.observe(container);
-    canvas.addEventListener('wheel', onWheel, { passive: false });
+    container.addEventListener('wheel', onWheel, { passive: false });
 
     // Found via live browser verification: readAccentColor() reads fresh on every redraw, but
     // nothing was actually *triggering* a redraw when the OS color scheme changed — the reactive
@@ -1023,7 +1025,7 @@
   });
 
   onDestroy(() => {
-    canvas?.removeEventListener('wheel', onWheel);
+    container?.removeEventListener('wheel', onWheel);
     resizeObserver?.disconnect();
     darkSchemeQuery?.removeEventListener('change', redraw);
   });

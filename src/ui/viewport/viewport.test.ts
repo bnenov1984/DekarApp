@@ -5,6 +5,7 @@ import {
   worldToScreen,
   zoomAt,
   zoomFromWheel,
+  wheelZoomFactor,
   resetZoom,
   fitBounds,
   panBy,
@@ -209,5 +210,50 @@ describe('no domain-geometry mutation', () => {
     // feed it one, since it doesn't accept one.
     const vp = zoomAt(defaultViewport(), { x: 10, y: 10 }, 2);
     expect(Object.keys(vp).sort()).toEqual(['offsetX', 'offsetY', 'scale']);
+  });
+});
+
+// 15 §2.2 Zoom (PO, 2026-10-11) — one wheel notch is a fixed ×1.1 step, whatever deltaY the mouse
+// reports (Windows mice report 100–400+ per notch, which used to jump 100% → ~180%).
+describe('wheelZoomFactor', () => {
+  const step = DEFAULT_VIEWPORT_CONFIG.zoomStep;
+
+  it('a notch of any reported size is exactly one step', () => {
+    for (const deltaY of [-50, -100, -120, -300, -400, -1000]) {
+      expect(wheelZoomFactor(deltaY, 0)).toBeCloseTo(step, 10);
+      expect(wheelZoomFactor(-deltaY, 0)).toBeCloseTo(1 / step, 10);
+    }
+  });
+
+  it('line and page mode deltas are a notch, even when small', () => {
+    expect(wheelZoomFactor(-3, 1)).toBeCloseTo(step, 10);
+    expect(wheelZoomFactor(1, 2)).toBeCloseTo(1 / step, 10);
+  });
+
+  it('small pixel deltas (trackpad, pinch) zoom proportionally, less than one step', () => {
+    const small = wheelZoomFactor(-10, 0);
+    const larger = wheelZoomFactor(-40, 0);
+    expect(small).toBeGreaterThan(1);
+    expect(larger).toBeGreaterThan(small);
+    expect(larger).toBeLessThan(step);
+    // proportional: two 10px events compound to one 20px event
+    expect(small * small).toBeCloseTo(wheelZoomFactor(-20, 0), 10);
+  });
+
+  it('no movement, no zoom', () => {
+    expect(wheelZoomFactor(0, 0)).toBe(1);
+    expect(wheelZoomFactor(0, 1)).toBe(1);
+  });
+});
+
+describe('zoomFromWheel — notch step', () => {
+  it('one 400px notch from 100% lands on 110%, not ~180%', () => {
+    const vp = zoomFromWheel(defaultViewport(), { x: 0, y: 0 }, -400);
+    expect(vp.scale).toBeCloseTo(1.1, 10);
+  });
+
+  it('passes the delta mode through', () => {
+    const vp = zoomFromWheel(defaultViewport(), { x: 0, y: 0 }, 3, 1);
+    expect(vp.scale).toBeCloseTo(1 / 1.1, 10);
   });
 });

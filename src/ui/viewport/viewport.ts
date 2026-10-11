@@ -22,21 +22,25 @@ export interface ViewportConfig {
   readonly minScale: number;
   readonly maxScale: number;
   readonly defaultScale: number;
-  /** wheel sensitivity — deltaY in "one notch" units (~100 for most mice/trackpads) maps to this
-   * multiplicative zoom factor per notch; exponential (not linear) so repeated notches compound
-   * smoothly rather than the step size relatively shrinking as you zoom in. */
-  readonly wheelZoomFactorPerNotch: number;
+  /** One zoom step — a mouse-wheel notch, `+`/`-`, Zoom in/out (15 §2.2). Multiplicative, so
+   * repeated steps compound evenly at any zoom level. */
+  readonly zoomStep: number;
+  /** A pixel-mode wheel delta at least this big is one mouse-wheel notch (mice report 50–400+
+   * per notch depending on OS and settings); smaller deltas are a trackpad or pinch, zoomed in
+   * proportion, `zoomStep` per this many pixels. */
+  readonly wheelNotchPixels: number;
 }
 
 /** Proposed constants (PO request: "propose sensible constants... keep them in one location, not
- * hard-coded throughout the UI"). 10%–800% covers the requested range; 1.0015 per deltaY unit
- * compounds to roughly ×1.16 per typical 100-unit mouse-wheel notch — a smooth, deterministic
- * step, no animation/inertia (precision work shouldn't feel delayed, PO request). */
+ * hard-coded throughout the UI"). 10%–800% covers the requested range. A ×1.1 step (PO,
+ * 2026-10-11) — about 7 notches double the zoom; no animation/inertia (precision work shouldn't
+ * feel delayed, PO request). */
 export const DEFAULT_VIEWPORT_CONFIG: ViewportConfig = {
   minScale: 0.1,
   maxScale: 8,
   defaultScale: 1,
-  wheelZoomFactorPerNotch: 1.0015,
+  zoomStep: 1.1,
+  wheelNotchPixels: 50,
 };
 
 export function defaultViewport(config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): Viewport {
@@ -87,12 +91,30 @@ export function zoomAt(viewport: Viewport, screenAnchor: Point, scaleFactor: num
   };
 }
 
-/** Wheel-event deltaY -> a zoomAt call, isolating the "which direction/how much" mapping so
- * CanvasStage's handler is just event plumbing. Wheel-up (deltaY < 0, per the DOM convention) zooms
- * in; wheel-down zooms out. */
-export function zoomFromWheel(viewport: Viewport, screenAnchor: Point, deltaY: number, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): Viewport {
-  const factor = Math.pow(config.wheelZoomFactorPerNotch, -deltaY);
-  return zoomAt(viewport, screenAnchor, factor, config);
+/** WheelEvent.deltaMode values: 0 = pixels, 1 = lines, 2 = pages. */
+export type WheelDeltaMode = 0 | 1 | 2;
+
+/** The zoom factor for one wheel event (15 §2.2, PO 2026-10-11). Wheel-up (deltaY < 0, the DOM
+ * convention) zooms in. A mouse notch — a line/page-mode delta, or a pixel delta of at least
+ * `wheelNotchPixels` — is exactly one `zoomStep`, however big a delta the mouse reports (Windows
+ * mice often report 300–400 per notch, which used to jump 100% → ~180%). Smaller pixel deltas
+ * (trackpad scroll, pinch) zoom proportionally, so they stay smooth and never exceed one step. */
+export function wheelZoomFactor(deltaY: number, deltaMode: number, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): number {
+  if (deltaY === 0) return 1;
+  const isNotch = deltaMode !== 0 || Math.abs(deltaY) >= config.wheelNotchPixels;
+  const steps = isNotch ? -Math.sign(deltaY) : -deltaY / config.wheelNotchPixels;
+  return Math.pow(config.zoomStep, steps);
+}
+
+/** Wheel event -> a zoomAt call, so CanvasStage's handler is just event plumbing. */
+export function zoomFromWheel(
+  viewport: Viewport,
+  screenAnchor: Point,
+  deltaY: number,
+  deltaMode = 0,
+  config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG,
+): Viewport {
+  return zoomAt(viewport, screenAnchor, wheelZoomFactor(deltaY, deltaMode, config), config);
 }
 
 /** Resets to `config.defaultScale`, pinning `screenAnchor` in place the same way `zoomAt` does —

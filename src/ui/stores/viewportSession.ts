@@ -16,8 +16,8 @@ import {
 
 export const viewport = writable<Viewport>(defaultViewport());
 
-export function zoomWheel(screenAnchor: Point, deltaY: number, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): void {
-  viewport.update((vp) => zoomFromWheel(vp, screenAnchor, deltaY, config));
+export function zoomWheel(screenAnchor: Point, deltaY: number, deltaMode = 0, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): void {
+  viewport.update((vp) => zoomFromWheel(vp, screenAnchor, deltaY, deltaMode, config));
 }
 
 /** Zoom indicator's "click to reset" (PO request, §3) — pins `screenAnchor` (the canvas center,
