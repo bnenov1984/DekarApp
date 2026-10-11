@@ -38,7 +38,7 @@
   import Icon from '../components/Icon.svelte';
   import { cancelDrag } from '../stores/vertexEditSession.js';
   import { splittingId, startSplit, cancelSplit, confirmSplit, closeSplitConfig } from '../stores/splitSession.js';
-  import { requestFitToContent } from '../stores/viewportSession.js';
+  import { requestFitToContent, requestZoomStep } from '../stores/viewportSession.js';
   import { shortcutsOverlayOpen, openShortcutsOverlay, closeShortcutsOverlay } from '../stores/shortcutsOverlaySession.js';
 
   // 15_UX_SPECIFICATION.md §13 — single-key tool shortcuts. PO follow-up ("replace Select tool
@@ -63,6 +63,26 @@
     // Freehand tool shortcut below. `isContentEditable` covers any future rich-text field even
     // though nothing in this app uses contenteditable today.
     return el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable === true;
+  }
+
+  // 15 §13 / §2.2 Zoom (PO, 2026-10-11) — the viewing keys, also in view-only (PD-022): `+`/`=` and
+  // `-` zoom one ×1.1 step around the canvas center, `0` and Shift+1 zoom to fit. Shift+1 matches
+  // `event.code` (the physical "1" key — Figma's convention), since what Shift+1 types depends on
+  // the keyboard layout. Returns whether the key was a zoom key.
+  function handleZoomKey(event: KeyboardEvent): boolean {
+    if (event.code === 'Digit1' && event.shiftKey) {
+      requestFitToContent();
+    } else if (event.key === '+' || event.key === '=') {
+      requestZoomStep(1);
+    } else if (event.key === '-') {
+      requestZoomStep(-1);
+    } else if (event.key === '0') {
+      requestFitToContent();
+    } else {
+      return false;
+    }
+    event.preventDefault();
+    return true;
   }
 
   // PO follow-up (UX review, item A8 "shortcuts help overlay") — `?` toggles a static reference
@@ -119,7 +139,7 @@
     }
 
     if ($viewOnly) {
-      // PD-022 — view-only keeps only the viewing shortcuts: help, Escape, zoom to fit.
+      // PD-022 — view-only keeps only the viewing shortcuts: help, Escape, zoom.
       if (isTypingTarget(event.target)) return;
       if (event.key === '?') {
         event.preventDefault();
@@ -127,9 +147,8 @@
       } else if (event.key === 'Escape') {
         closeRightOverlay();
         deselectAll();
-      } else if (event.code === 'Digit1' && event.shiftKey) {
-        event.preventDefault();
-        requestFitToContent();
+      } else {
+        handleZoomKey(event);
       }
       return;
     }
@@ -177,6 +196,9 @@
       return;
     }
 
+    // Zooming is only viewing, so it works mid-calibration and mid-drawing too.
+    if (handleZoomKey(event)) return;
+
     // Calibration and drawing never interleave (Tool Dock is disabled while calibrating,
     // ToolDock.svelte) — block tool shortcuts/Enter/snap-toggle here too so a keypress outside
     // the calibration input can't arm a drawing tool mid-calibration.
@@ -185,15 +207,6 @@
     if (event.key === 'Enter') {
       handleEnter();
       confirmSplit(); // no-op unless a split line already crosses the boundary exactly twice
-      return;
-    }
-    if (event.code === 'Digit1' && event.shiftKey) {
-      // PO follow-up (UX review, item B8 "zoom-to-fit") — Shift+1, the same convention Figma
-      // uses. `event.code` (not `event.key`) so this fires on the physical "1" key regardless of
-      // what Shift+1 actually produces on the user's keyboard layout (e.g. '!' on US, '1' on some
-      // European layouts that put digits behind Shift already).
-      event.preventDefault();
-      requestFitToContent();
       return;
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && !$splittingId) {

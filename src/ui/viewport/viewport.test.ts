@@ -7,6 +7,9 @@ import {
   zoomFromWheel,
   wheelZoomFactor,
   resetZoom,
+  zoomTo,
+  zoomByStep,
+  parseZoomPercent,
   fitBounds,
   panBy,
   DEFAULT_VIEWPORT_CONFIG,
@@ -255,5 +258,67 @@ describe('zoomFromWheel — notch step', () => {
   it('passes the delta mode through', () => {
     const vp = zoomFromWheel(defaultViewport(), { x: 0, y: 0 }, 3, 1);
     expect(vp.scale).toBeCloseTo(1 / 1.1, 10);
+  });
+});
+
+// 15 §2.2 Zoom (PO, 2026-10-11) — the ZoomMenu's typed % and presets, `+`/`-` and Zoom in/out.
+describe('parseZoomPercent', () => {
+  it('reads a plain number, a trailing %, and surrounding spaces as a scale', () => {
+    expect(parseZoomPercent('150')).toBeCloseTo(1.5, 10);
+    expect(parseZoomPercent('150%')).toBeCloseTo(1.5, 10);
+    expect(parseZoomPercent(' 75 ')).toBeCloseTo(0.75, 10);
+    expect(parseZoomPercent('80 %')).toBeCloseTo(0.8, 10);
+  });
+
+  it('accepts a decimal point or a decimal comma', () => {
+    expect(parseZoomPercent('12.5')).toBeCloseTo(0.125, 10);
+    expect(parseZoomPercent('12,5%')).toBeCloseTo(0.125, 10);
+  });
+
+  it('clamps an out-of-range value to 10–800%', () => {
+    expect(parseZoomPercent('5')).toBe(DEFAULT_VIEWPORT_CONFIG.minScale);
+    expect(parseZoomPercent('0')).toBe(DEFAULT_VIEWPORT_CONFIG.minScale);
+    expect(parseZoomPercent('9000')).toBe(DEFAULT_VIEWPORT_CONFIG.maxScale);
+  });
+
+  it('is null for junk, so the field just restores the current value', () => {
+    for (const text of ['', '   ', 'abc', '150abc', '%', '1.2.3', '-50', '1e3']) {
+      expect(parseZoomPercent(text)).toBeNull();
+    }
+  });
+});
+
+describe('zoomTo', () => {
+  it('sets the scale and keeps the anchor fixed', () => {
+    const before: Viewport = { scale: 2, offsetX: 30, offsetY: -10 };
+    const anchor = { x: 400, y: 300 };
+    const after = zoomTo(before, anchor, 0.5);
+    expect(after.scale).toBeCloseTo(0.5, 10);
+    const worldBefore = screenToWorld(before, anchor);
+    const worldAfter = screenToWorld(after, anchor);
+    expect(worldAfter.x).toBeCloseTo(worldBefore.x, 8);
+    expect(worldAfter.y).toBeCloseTo(worldBefore.y, 8);
+  });
+
+  it('clamps to the scale range', () => {
+    expect(zoomTo(defaultViewport(), { x: 0, y: 0 }, 50).scale).toBe(DEFAULT_VIEWPORT_CONFIG.maxScale);
+    expect(zoomTo(defaultViewport(), { x: 0, y: 0 }, 0.01).scale).toBe(DEFAULT_VIEWPORT_CONFIG.minScale);
+  });
+});
+
+describe('zoomByStep', () => {
+  it('one step in is ×1.1, one step out is ÷1.1, around the anchor', () => {
+    const anchor = { x: 200, y: 100 };
+    const zoomedIn = zoomByStep(defaultViewport(), anchor, 1);
+    expect(zoomedIn.scale).toBeCloseTo(1.1, 10);
+    expect(zoomByStep(defaultViewport(), anchor, -1).scale).toBeCloseTo(1 / 1.1, 10);
+    const world = screenToWorld(zoomedIn, anchor);
+    expect(world.x).toBeCloseTo(200, 8);
+    expect(world.y).toBeCloseTo(100, 8);
+  });
+
+  it('stops at the limits', () => {
+    const atMax: Viewport = { scale: DEFAULT_VIEWPORT_CONFIG.maxScale, offsetX: 0, offsetY: 0 };
+    expect(zoomByStep(atMax, { x: 0, y: 0 }, 1).scale).toBe(DEFAULT_VIEWPORT_CONFIG.maxScale);
   });
 });

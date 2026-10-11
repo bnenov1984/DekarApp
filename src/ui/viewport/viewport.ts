@@ -121,7 +121,29 @@ export function zoomFromWheel(
  * used by the zoom indicator's optional "click to reset" affordance so resetting doesn't also
  * recenter the viewport out from under whatever the user was looking at. */
 export function resetZoom(viewport: Viewport, screenAnchor: Point, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): Viewport {
-  return zoomAt(viewport, screenAnchor, config.defaultScale / viewport.scale, config);
+  return zoomTo(viewport, screenAnchor, config.defaultScale, config);
+}
+
+/** Zooms to an exact `scale` (clamped), pinning `screenAnchor` — the ZoomMenu's typed % and its
+ * 50/100/200% presets (15 §2.2 Zoom, PO 2026-10-11). */
+export function zoomTo(viewport: Viewport, screenAnchor: Point, scale: number, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): Viewport {
+  return zoomAt(viewport, screenAnchor, scale / viewport.scale, config);
+}
+
+/** `steps` whole zoom steps (positive in, negative out) around `screenAnchor` — `+`/`-` and the
+ * ZoomMenu's Zoom in/out, the same ×1.1 step as one wheel notch. */
+export function zoomByStep(viewport: Viewport, screenAnchor: Point, steps: number, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): Viewport {
+  return zoomAt(viewport, screenAnchor, Math.pow(config.zoomStep, steps), config);
+}
+
+const ZOOM_PERCENT_PATTERN = /^(\d+(?:[.,]\d+)?)\s*%?$/;
+
+/** A typed zoom % ("150", "150%", " 75 ", "12,5") as a scale, clamped to the zoom range; `null`
+ * for anything else, and the ZoomMenu then silently shows the current value again (15 §2.2). */
+export function parseZoomPercent(text: string, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): number | null {
+  const match = ZOOM_PERCENT_PATTERN.exec(text.trim());
+  if (!match) return null;
+  return clampScale(Number(match[1]!.replace(',', '.')) / 100, config);
 }
 
 export interface FitBounds {

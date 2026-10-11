@@ -87,9 +87,10 @@
   import {
     viewport,
     zoomWheel,
-    resetZoomAt,
     fitToContentRequested,
-    zoomResetRequested,
+    centerZoomRequested,
+    zoomAtCenter,
+    type CenterZoom,
     panDrag,
     startPan,
     panTo,
@@ -174,15 +175,15 @@
       : null;
   $: imageAspectRatio = $backgroundImage ? $backgroundImage.width / $backgroundImage.height : 1;
 
-  // 15 §2.2 (Photoshop layout, 2026-10-11) — the zoom % itself is shown in StatusBar.svelte; a click
-  // there asks for a reset, anchored here at the canvas center so the view doesn't jump to a corner.
-  // A function, not inline, so the reactive statement depends only on the signal — inlining would
-  // also make it re-run (and reset the zoom again) on every canvas resize.
-  function resetZoomAtCenter(): void {
-    resetZoomAt({ x: widthCss / 2, y: heightCss / 2 });
+  // 15 §2.2 Zoom (PO, 2026-10-11) — the status bar's ZoomMenu and Studio's `+`/`-` keys ask for a
+  // zoom; it's applied here around the canvas center so the view doesn't jump to a corner. A
+  // function, not inline, so the reactive statement depends only on the request — inlining would
+  // also make it re-run (and zoom again) on every canvas resize.
+  function applyCenterZoom(zoom: CenterZoom): void {
+    zoomAtCenter(zoom, { x: widthCss / 2, y: heightCss / 2 });
   }
 
-  $: if ($zoomResetRequested) resetZoomAtCenter();
+  $: if ($centerZoomRequested) applyCenterZoom($centerZoomRequested.zoom);
 
   // PO follow-up (UX review, item B8 "zoom-to-fit") — union of every Measurement's bounds plus
   // the background image's current rect (if any); `null` when there's nothing to fit (a blank,

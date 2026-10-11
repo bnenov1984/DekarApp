@@ -52,9 +52,10 @@
     {
       title: 'View',
       items: [
-        ['Scroll wheel', 'Zoom in/out'],
+        ['Scroll wheel, or + / −', 'Zoom in/out'],
         ['Space + drag, or middle-mouse drag', 'Pan'],
-        ['Shift + 1, or double-click the zoom %', 'Zoom to fit everything'],
+        ['0, or Shift + 1', 'Zoom to fit everything'],
+        ['Click the zoom %', 'Type a zoom %, or pick 50 / 100 / 200%'],
         ['S', 'Toggle snap'],
         ['Alt (held)', 'Temporarily disable snap while dragging'],
         ['Shift (held, while drawing/editing)', 'Constrain to a straight angle'],

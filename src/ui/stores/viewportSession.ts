@@ -3,7 +3,8 @@ import type { Point } from '../../core/domain/types.js';
 import {
   defaultViewport,
   zoomFromWheel,
-  resetZoom as resetZoomAtAnchor,
+  zoomTo,
+  zoomByStep,
   DEFAULT_VIEWPORT_CONFIG,
   type Viewport,
   type ViewportConfig,
@@ -18,13 +19,6 @@ export const viewport = writable<Viewport>(defaultViewport());
 
 export function zoomWheel(screenAnchor: Point, deltaY: number, deltaMode = 0, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): void {
   viewport.update((vp) => zoomFromWheel(vp, screenAnchor, deltaY, deltaMode, config));
-}
-
-/** Zoom indicator's "click to reset" (PO request, §3) — pins `screenAnchor` (the canvas center,
- * CanvasStage.svelte) rather than snapping straight back to
- * (0,0) pan, matching zoomWheel's own pointer-centered feel. */
-export function resetZoomAt(screenAnchor: Point): void {
-  viewport.update((vp) => resetZoomAtAnchor(vp, screenAnchor));
 }
 
 /** Called when a new/different Surface opens (appState.ts) — a freshly opened project starts at
@@ -45,13 +39,37 @@ export function requestFitToContent(): void {
   fitToContentRequested.update((n) => n + 1);
 }
 
-/** 15 §2.2 (Photoshop layout, 2026-10-11) — the zoom % lives in the status bar, which has no
- * canvas box to anchor a reset at; it bumps this and CanvasStage resets around the canvas center.
- * Same bump-signal pattern as `fitToContentRequested` above. */
-export const zoomResetRequested = writable(0);
+/** 15 §2.2 Zoom (PO, 2026-10-11) — a zoom the status bar's ZoomMenu or the `+`/`-` keys ask for,
+ * applied around the canvas center: to an exact scale, or by whole ×1.1 steps. */
+export type CenterZoom = { readonly kind: 'to'; readonly scale: number } | { readonly kind: 'step'; readonly steps: number };
 
-export function requestZoomReset(): void {
-  zoomResetRequested.update((n) => n + 1);
+/** Neither the status bar nor Studio's key handler knows the canvas box, so they post a request
+ * and CanvasStage applies it at the canvas center (`zoomAtCenter`). `seq` makes every request a
+ * new value, so pressing `+` twice zooms twice. Same signal idea as `fitToContentRequested`. */
+export const centerZoomRequested = writable<{ readonly seq: number; readonly zoom: CenterZoom } | null>(null);
+
+function requestCenterZoom(zoom: CenterZoom): void {
+  centerZoomRequested.update((current) => ({ seq: (current?.seq ?? 0) + 1, zoom }));
+}
+
+export function requestZoomTo(scale: number): void {
+  requestCenterZoom({ kind: 'to', scale });
+}
+
+export function requestZoomStep(steps: number): void {
+  requestCenterZoom({ kind: 'step', steps });
+}
+
+/** The ZoomMenu's 100%. */
+export function requestZoomReset(config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): void {
+  requestZoomTo(config.defaultScale);
+}
+
+/** CanvasStage's side of a center zoom request; `center` is the canvas box's center. */
+export function zoomAtCenter(zoom: CenterZoom, center: Point, config: ViewportConfig = DEFAULT_VIEWPORT_CONFIG): void {
+  viewport.update((vp) => (zoom.kind === 'to' ? zoomTo(vp, center, zoom.scale, config) : zoomByStep(vp, center, zoom.steps, config)));
+  // Consumed — a canvas mounted later (another project opened) must not replay it.
+  centerZoomRequested.set(null);
 }
 
 // PO follow-up ("replace Select tool with Pan") — the one shared pan-drag lifecycle, used
