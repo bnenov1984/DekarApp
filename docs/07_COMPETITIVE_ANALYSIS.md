@@ -166,7 +166,7 @@
 |---|---------|----------|---------|-----------|
 | P1 | Canvas-first, минимален chrome | Figma, Excalidraw, Maps | ✅ Adopt | Visual First принцип; платното Е продуктът |
 | P2 | Контекстен property панел (само при селекция) | Figma | ✅ Adopt | Progressive Disclosure; начинаещ никога не вижда празен панел |
-| P3 | Долен централен tool dock | FigJam | ✅ Adopt | Единственият toolbar pattern, който оцелява desktop→tablet→phone без промяна (PWA, PD-001) |
+| P3 | Долен централен tool dock | FigJam | ~~✅ Adopt~~ → отменено 2026-10-11 | Единственият toolbar pattern, който оцелява desktop→tablet→phone без промяна (PWA, PD-001). Причината отпадна с PD-022 (desktop-first, мобилно = преглед) — заменен от ляв вертикален Tool Bar (15 D1) |
 | P4 | Двупосочен Measurement List (таблица↔платно) | Bluebeam | ✅ Adopt (модернизиран) | Professional данни + accessibility алтернатива на платното |
 | P5 | Едноклавишни tool shortcuts | Excalidraw, Figma | ✅ Adopt | Minimal clicks за pro; невидими за начинаещи |
 | P6 | Command palette | Figma | ✅ Adopt | Разрешава конфликта "максимална откриваемост" ↔ "минимален chrome" |

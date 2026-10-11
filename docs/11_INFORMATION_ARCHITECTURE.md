@@ -105,7 +105,7 @@ Studio
 └── Project ─────────────── Recent карта / Start действие
     ├── Surface ─────────── Surface tabs в Studio (при >1)
     │   ├── Calibration ─── ScaleChip (статус) → календриращ flow
-    │   └── Layer ───────── ляв панел, таб Layers
+    │   └── Layer ───────── дясна колона, секция Layers
     │       └── Measurement ┬─ директно: клик на фигурата (платно)
     │                       ├─ таблично: ред в Measurement List
     │                       └─ команда: ⌘K по име
@@ -118,7 +118,7 @@ Studio
 
 ```
 Workspace ────────────── workspace chip (топ лента) → switcher
-Extension ────────────── десен панел, секция Extensions → Marketplace overlay
+Extension ────────────── дясна колона, секция Extensions → Marketplace overlay
 App Settings ─────────── Settings overlay (навсякъде)
 Ghost ────────────────── само на платното, само докато съществува
 ```
