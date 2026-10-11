@@ -238,9 +238,14 @@
   }
 </script>
 
-{#if rows.length > 0 || hasBackgroundLayer}
-  <div class="panel">
-    <div class="header">Layers <span class="count">{rows.length + (hasBackgroundLayer ? 1 : 0)}</span></div>
+<!-- 15 §2.2 (Photoshop layout, 2026-10-11) — always rendered, as the bottom section of
+     RightColumn.svelte. An empty project shows "No shapes yet." instead of hiding the panel, so the
+     canvas no longer jumps sideways when the first shape is drawn. -->
+<div class="panel" data-testid="layers-panel">
+  <div class="header">Layers{#if rows.length > 0 || hasBackgroundLayer} <span class="count">{rows.length + (hasBackgroundLayer ? 1 : 0)}</span>{/if}</div>
+  {#if rows.length === 0 && !hasBackgroundLayer}
+    <p class="empty-state" data-testid="layers-panel-empty">No shapes yet.</p>
+  {:else}
     <ul class="list">
       {#each rows as row (row.id)}
         <li
@@ -338,24 +343,30 @@
         <strong>{totalLabel}</strong>
       </div>
     {/if}
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .panel {
-    width: 236px;
-    flex: 0 0 236px;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--af-surface-panel);
-    border-right: 1px solid var(--af-border-subtle);
   }
 
+  /* Same header style as PropertyPanel's: one look for every section title in the column. */
   .header {
     font-size: 12.5px;
     font-weight: 600;
     padding: 10px 12px 8px;
     color: var(--af-ink-primary);
+  }
+
+  .empty-state {
+    margin: 0;
+    padding: 0 12px;
+    font-size: 12.5px;
+    color: var(--af-ink-tertiary);
   }
 
   .count {

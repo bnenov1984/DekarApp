@@ -366,12 +366,11 @@
   }
 </script>
 
-<!-- PO request ("Keep the right Properties panel permanently visible") — this outer .panel div is
-     now the ONLY element gating the 236px column: it renders unconditionally regardless of
-     selection state, so Studio.svelte's flex row width (and therefore CanvasStage's container
-     size and, for image Surfaces, the background image's contain-fit rect) never changes when a
-     shape is selected/deselected — the panel's *contents* branch on selection state below, not
-     its own presence in the layout. -->
+<!-- PO request ("Keep the right Properties panel permanently visible") — this outer .panel div
+     renders unconditionally regardless of selection state; only its contents branch on the
+     selection below. Since the Photoshop layout (15 §2.2, 2026-10-11) it fills the top section of
+     RightColumn.svelte, which owns the column's width, so selecting or deselecting never changes
+     the canvas size. -->
 <div class="panel" data-testid="property-panel">
 {#if measurement}
   <div class="header-row">
@@ -720,22 +719,23 @@
 {:else}
   <!-- PO request ("Keep the right Properties panel permanently visible") — the empty state: the
        panel column itself never disappears, only its content changes. -->
+  <div class="header-row">
+    <span class="header">Properties</span>
+  </div>
   <div class="empty-state" data-testid="property-panel-empty">
-    <p>Select a shape to edit its properties</p>
+    <p>Select a shape to see its properties.</p>
   </div>
 {/if}
 </div>
 
 <style>
   .panel {
-    width: 236px;
-    flex: 0 0 236px;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 14px;
     padding: 10px 12px;
-    background: var(--af-surface-panel);
-    border-left: 1px solid var(--af-border-subtle);
     overflow: auto;
   }
 
@@ -828,15 +828,12 @@
   .empty-state {
     display: flex;
     align-items: flex-start;
-    justify-content: center;
-    padding-top: 24px;
   }
 
   .empty-state p {
     margin: 0;
     font-size: 12.5px;
     color: var(--af-ink-tertiary);
-    text-align: center;
   }
 
   .split-config {
