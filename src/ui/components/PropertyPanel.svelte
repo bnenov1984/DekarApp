@@ -4,15 +4,14 @@
   // multi-select aggregation are deferred this slice (no extensions exist; no multi-select exists
   // anywhere in the app yet) — see the Files section of the implementation plan for the full list.
   //
-  // Renders nothing when there's no selection (same "component-internal empty state" pattern as
-  // MeasurementList.svelte, 15 §15).
+  // With no selection it shows its own empty state (15 §15) rather than disappearing — the right
+  // column is always visible (15 §2.2, 2026-10-11).
   import {
     activeSurface,
     selectedMeasurementId,
     selectedMeasurementIds,
     backgroundSelected,
     setImageLocked,
-    setMeasurementLocked,
     executeCommand,
     deleteSelectedMeasurement,
     setVertexLabel,
@@ -328,13 +327,6 @@
     startSplit(measurement.id);
   }
 
-  // PO follow-up ("per-measurement lock") — same setMeasurementLocked action the Layers panel's
-  // own per-row lock toggle and the context menu's Lock/Unlock item use.
-  function onToggleLocked(): void {
-    if (!measurement) return;
-    setMeasurementLocked(measurement.id, !measurement.locked);
-  }
-
   // PO follow-up (UX review, item A13 "multi-select bulk operations") — a minimal bulk summary
   // for >1 selected: Delete (already bulk-aware, studioSession.ts), a "set color for all" swatch
   // row (reuses the same MEASUREMENT_COLORS/swatch UI as the single-measurement view above), and
@@ -373,112 +365,12 @@
      the canvas size. -->
 <div class="panel" data-testid="property-panel">
 {#if measurement}
+  <!-- 16 §3.2 (Photoshop layout, 2026-10-11) — panel headers hold only the title; the actions
+       live in the body (Split) and at the bottom (Delete). Lock is only on the Layers row. -->
   <div class="header-row">
     <span class="header">Properties</span>
-    <div class="header-actions">
-      {#if measurement.shape.type === 'polygon'}
-        <button
-          type="button"
-          class="split-button"
-          class:active={splitConfigOpenForThis}
-          title="Split"
-          disabled={!canSplitSelected && !splitConfigOpenForThis}
-          on:click={onSplitClick}
-          data-testid="split-measurement"
-        >
-          Split
-        </button>
-      {/if}
-      <button
-        type="button"
-        class="lock-button"
-        title={measurement.locked ? 'Unlock to move, resize, or delete' : 'Lock to prevent moving, resizing, or deleting'}
-        on:click={onToggleLocked}
-        data-testid="lock-measurement"
-      >
-        <Icon name={measurement.locked ? 'lock' : 'unlock'} size={14} />
-      </button>
-      <button
-        type="button"
-        class="delete-button"
-        title="Delete (Backspace)"
-        disabled={measurement.locked}
-        on:click={onDeleteClick}
-        data-testid="delete-measurement"
-      >
-        Delete
-      </button>
-    </div>
   </div>
 
-  {#if splitConfigOpenForThis}
-    <!-- PO request ("Redesign and fix Split functionality") — replaces the old unlabeled
-         line-draw-on-canvas default: pick a part count + distribution here, one click computes
-         everything (core/drawing/splitParts.ts), no canvas interaction needed. The previous
-         line-draw flow is retained one step further down as an explicitly labeled "Manual split"
-         fallback, not deleted. -->
-    <section class="section split-config" data-testid="split-config">
-      <label class="notes-label" for="split-parts-count">Number of parts</label>
-      <div class="split-count-row">
-        {#each [2, 3, 4] as n (n)}
-          <button
-            type="button"
-            class="split-count-preset"
-            class:active={$splitPartsCount === n}
-            on:click={() => splitPartsCount.set(n)}
-            data-testid="split-count-{n}"
-          >
-            {n}
-          </button>
-        {/each}
-        <input
-          id="split-parts-count"
-          type="number"
-          min="2"
-          max="24"
-          step="1"
-          class="split-count-input"
-          value={$splitPartsCount}
-          on:input={(e) => splitPartsCount.set(Math.max(2, Math.min(24, Number(e.currentTarget.value) || 2)))}
-          aria-label="Custom number of parts"
-          data-testid="split-count-custom"
-        />
-      </div>
-
-      <span class="notes-label">Distribution</span>
-      <div class="split-distribution-row" role="group" aria-label="Distribution">
-        <button
-          type="button"
-          class="split-distribution-option"
-          class:active={$splitDistribution === 'equal'}
-          on:click={() => splitDistribution.set('equal')}
-          data-testid="split-distribution-equal"
-        >
-          Equal
-        </button>
-        <button
-          type="button"
-          class="split-distribution-option"
-          class:active={$splitDistribution === 'random'}
-          on:click={() => splitDistribution.set('random')}
-          data-testid="split-distribution-random"
-        >
-          Random
-        </button>
-      </div>
-
-      {#if $splitPartsError}
-        <p class="split-error" data-testid="split-error">{$splitPartsError}</p>
-      {/if}
-
-      <button type="button" class="split-confirm-button" on:click={confirmSplitParts} data-testid="split-confirm">
-        Split polygon
-      </button>
-      <button type="button" class="manual-split-link" on:click={onManualSplitClick} data-testid="manual-split-link">
-        Manual split (draw a line)
-      </button>
-    </section>
-  {/if}
 
   <section class="section">
     <input
@@ -613,6 +505,92 @@
       </section>
     {/if}
 
+  {#if measurement.shape.type === 'polygon'}
+    <section class="section split-section">
+      <button
+        type="button"
+        class="secondary-button"
+        class:active={splitConfigOpenForThis}
+        title="Split into parts (X)"
+        aria-expanded={splitConfigOpenForThis}
+        disabled={!canSplitSelected && !splitConfigOpenForThis}
+        on:click={onSplitClick}
+        data-testid="split-measurement"
+      >
+        <Icon name="split" size={14} />
+        Split
+      </button>
+    {#if splitConfigOpenForThis}
+      <!-- PO request ("Redesign and fix Split functionality") — replaces the old unlabeled
+           line-draw-on-canvas default: pick a part count + distribution here, one click computes
+           everything (core/drawing/splitParts.ts), no canvas interaction needed. The previous
+           line-draw flow is retained one step further down as an explicitly labeled "Manual split"
+           fallback, not deleted. -->
+      <section class="section split-config" data-testid="split-config">
+        <label class="notes-label" for="split-parts-count">Number of parts</label>
+        <div class="split-count-row">
+          {#each [2, 3, 4] as n (n)}
+            <button
+              type="button"
+              class="split-count-preset"
+              class:active={$splitPartsCount === n}
+              on:click={() => splitPartsCount.set(n)}
+              data-testid="split-count-{n}"
+            >
+              {n}
+            </button>
+          {/each}
+          <input
+            id="split-parts-count"
+            type="number"
+            min="2"
+            max="24"
+            step="1"
+            class="split-count-input"
+            value={$splitPartsCount}
+            on:input={(e) => splitPartsCount.set(Math.max(2, Math.min(24, Number(e.currentTarget.value) || 2)))}
+            aria-label="Custom number of parts"
+            data-testid="split-count-custom"
+          />
+        </div>
+
+        <span class="notes-label">Distribution</span>
+        <div class="split-distribution-row" role="group" aria-label="Distribution">
+          <button
+            type="button"
+            class="split-distribution-option"
+            class:active={$splitDistribution === 'equal'}
+            on:click={() => splitDistribution.set('equal')}
+            data-testid="split-distribution-equal"
+          >
+            Equal
+          </button>
+          <button
+            type="button"
+            class="split-distribution-option"
+            class:active={$splitDistribution === 'random'}
+            on:click={() => splitDistribution.set('random')}
+            data-testid="split-distribution-random"
+          >
+            Random
+          </button>
+        </div>
+
+        {#if $splitPartsError}
+          <p class="split-error" data-testid="split-error">{$splitPartsError}</p>
+        {/if}
+
+        <button type="button" class="split-confirm-button" on:click={confirmSplitParts} data-testid="split-confirm">
+          Split polygon
+        </button>
+        <button type="button" class="manual-split-link" on:click={onManualSplitClick} data-testid="manual-split-link">
+          Manual split (draw a line)
+        </button>
+      </section>
+    {/if}
+    </section>
+  {/if}
+
     <section class="section">
       {#if activeLabel}
         <div class="notes-header-row">
@@ -654,18 +632,21 @@
         ></textarea>
       {/if}
     </section>
+
+  <button
+    type="button"
+    class="delete-button"
+    title={measurement.locked ? 'Unlock it in Layers to delete' : 'Delete shape (Backspace)'}
+    disabled={measurement.locked}
+    on:click={onDeleteClick}
+    data-testid="delete-measurement"
+  >
+    <Icon name="trash" size={14} />
+    Delete shape
+  </button>
 {:else if $selectedMeasurementIds.size > 1}
   <div class="header-row">
     <span class="header">{$selectedMeasurementIds.size} measurements selected</span>
-    <button
-      type="button"
-      class="delete-button"
-      title="Delete (Backspace)"
-      on:click={deleteSelectedMeasurement}
-      data-testid="delete-measurement"
-    >
-      Delete
-    </button>
   </div>
 
   <section class="section">
@@ -689,6 +670,17 @@
       <div class="value-row"><span>Total area</span><strong>{multiTotalAreaLabel}</strong></div>
     </section>
   {/if}
+
+  <button
+    type="button"
+    class="delete-button"
+    title="Delete shapes (Backspace)"
+    on:click={deleteSelectedMeasurement}
+    data-testid="delete-measurement"
+  >
+    <Icon name="trash" size={14} />
+    Delete {$selectedMeasurementIds.size} shapes
+  </button>
 {:else if $backgroundSelected}
   <div class="header-row">
     <span class="header">Background</span>
@@ -751,59 +743,73 @@
     color: var(--af-ink-primary);
   }
 
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .delete-button,
-  .split-button {
-    font-size: 11.5px;
-    font-weight: 600;
-    background: none;
-    border: none;
-    padding: 3px 6px;
-    border-radius: var(--af-radius-sm);
-    cursor: pointer;
-  }
-
-  .delete-button {
-    color: var(--af-danger);
-  }
-
-  .split-button {
-    color: var(--af-accent);
-  }
-
-  .split-button.active {
-    background: color-mix(in srgb, var(--af-accent) 15%, transparent);
-  }
-
-  .lock-button {
+  /* Split — an ordinary secondary button in the body (16 §3.2). */
+  .secondary-button {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--af-ink-secondary);
     background: none;
-    border: none;
-    padding: 3px 5px;
+    border: 1px solid var(--af-border-subtle);
+    padding: 5px 10px;
     border-radius: var(--af-radius-sm);
     cursor: pointer;
-    color: var(--af-ink-tertiary);
   }
 
-  .lock-button:hover {
-    background: var(--af-surface-app);
+  .secondary-button:hover:not(:disabled) {
     color: var(--af-ink-primary);
+    border-color: var(--af-ink-secondary);
   }
 
-  .delete-button:hover:not(:disabled),
-  .split-button:hover:not(:disabled) {
-    background: var(--af-surface-app);
+  .secondary-button.active {
+    color: var(--af-accent);
+    border-color: var(--af-accent);
+    background: color-mix(in srgb, var(--af-accent) 10%, transparent);
   }
 
-  .delete-button:disabled,
-  .split-button:disabled {
+  /* "Delete shape" — full width, low emphasis, at the bottom of the panel (16 §3.2). Sticky, so
+     it stays in view when the sections above scroll in a short Properties section. Red only on
+     hover, so a destructive action never shouts from a panel the user reads constantly. */
+  .delete-button {
+    margin-top: auto;
+    position: sticky;
+    bottom: 0;
+    /* Masks content scrolling past it, including the panel's 10px bottom padding below it. */
+    box-shadow: 0 0 0 4px var(--af-surface-panel), 0 10px 0 4px var(--af-surface-panel);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    flex-shrink: 0;
+    font: inherit;
+    font-size: 12px;
+    color: var(--af-ink-tertiary);
+    background: var(--af-surface-panel);
+    border: 1px solid transparent;
+    padding: 6px 10px;
+    border-radius: var(--af-radius-sm);
+    cursor: pointer;
+  }
+
+  .delete-button:hover:not(:disabled) {
+    color: var(--af-danger);
+    border-color: color-mix(in srgb, var(--af-danger) 35%, transparent);
+    background: color-mix(in srgb, var(--af-danger) 6%, var(--af-surface-panel));
+  }
+
+  .secondary-button:focus-visible,
+  .delete-button:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 1px;
+  }
+
+  .secondary-button:disabled,
+  .delete-button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
