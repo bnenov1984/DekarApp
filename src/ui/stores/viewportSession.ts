@@ -20,8 +20,8 @@ export function zoomWheel(screenAnchor: Point, deltaY: number, config: ViewportC
   viewport.update((vp) => zoomFromWheel(vp, screenAnchor, deltaY, config));
 }
 
-/** Zoom indicator's optional "click to reset" (PO request, §3) — pins `screenAnchor` (typically
- * the indicator's own position, or the viewport center) rather than snapping straight back to
+/** Zoom indicator's "click to reset" (PO request, §3) — pins `screenAnchor` (the canvas center,
+ * CanvasStage.svelte) rather than snapping straight back to
  * (0,0) pan, matching zoomWheel's own pointer-centered feel. */
 export function resetZoomAt(screenAnchor: Point): void {
   viewport.update((vp) => resetZoomAtAnchor(vp, screenAnchor));
@@ -38,11 +38,20 @@ export function resetViewport(): void {
  * *and* the current canvas box size, both of which only CanvasStage.svelte has in hand (same
  * "session module can't reach into component-local state" reason imageResizeDrag/
  * backgroundLockFlash use the identical signal-store pattern). Studio.svelte's keyboard shortcut
- * and the zoom indicator's double-click both just bump this; CanvasStage reacts and does the math. */
+ * and the status bar zoom %'s double-click both just bump this; CanvasStage reacts and does the math. */
 export const fitToContentRequested = writable(0);
 
 export function requestFitToContent(): void {
   fitToContentRequested.update((n) => n + 1);
+}
+
+/** 15 §2.2 (Photoshop layout, 2026-10-11) — the zoom % lives in the status bar, which has no
+ * canvas box to anchor a reset at; it bumps this and CanvasStage resets around the canvas center.
+ * Same bump-signal pattern as `fitToContentRequested` above. */
+export const zoomResetRequested = writable(0);
+
+export function requestZoomReset(): void {
+  zoomResetRequested.update((n) => n + 1);
 }
 
 // PO follow-up ("replace Select tool with Pan") — the one shared pan-drag lifecycle, used

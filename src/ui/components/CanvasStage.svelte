@@ -89,6 +89,7 @@
     zoomWheel,
     resetZoomAt,
     fitToContentRequested,
+    zoomResetRequested,
     panDrag,
     startPan,
     panTo,
@@ -172,14 +173,15 @@
       : null;
   $: imageAspectRatio = $backgroundImage ? $backgroundImage.width / $backgroundImage.height : 1;
 
-  // PO request (zoom % indicator) — "reflect the true renderer viewport scale... do not maintain
-  // a duplicate independent UI value": this is a plain derived read of $viewport, never its own
-  // stored number.
-  $: zoomPercent = Math.round($viewport.scale * 100);
-
-  function onZoomIndicatorClick(): void {
+  // 15 §2.2 (Photoshop layout, 2026-10-11) — the zoom % itself is shown in StatusBar.svelte; a click
+  // there asks for a reset, anchored here at the canvas center so the view doesn't jump to a corner.
+  // A function, not inline, so the reactive statement depends only on the signal — inlining would
+  // also make it re-run (and reset the zoom again) on every canvas resize.
+  function resetZoomAtCenter(): void {
     resetZoomAt({ x: widthCss / 2, y: heightCss / 2 });
   }
+
+  $: if ($zoomResetRequested) resetZoomAtCenter();
 
   // PO follow-up (UX review, item B8 "zoom-to-fit") — union of every Measurement's bounds plus
   // the background image's current rect (if any); `null` when there's nothing to fit (a blank,
@@ -1101,21 +1103,6 @@
       {label.primaryLabel}
     </div>
   {/each}
-  <!-- PO request (zoom %) — non-obstructive canvas-corner overlay, visually secondary (small,
-       muted) but always readable; click resets to 100% (optional interaction, PO request),
-       anchored at the canvas center so resetting doesn't recenter the view on some arbitrary
-       corner point. -->
-  <button
-    type="button"
-    class="zoom-indicator"
-    on:click={onZoomIndicatorClick}
-    on:dblclick={fitToContent}
-    title="Click: reset to 100%. Double-click: zoom to fit"
-    aria-label="Zoom level {zoomPercent}% — click to reset to 100%, double-click to zoom to fit"
-    data-testid="zoom-indicator"
-  >
-    {zoomPercent}%
-  </button>
   <ScaleBar />
 </div>
 
@@ -1250,32 +1237,5 @@
     border-radius: var(--af-radius-sm);
     padding: 4px 8px;
     cursor: pointer;
-  }
-
-  /* PO request (zoom %) — visually secondary (small, muted), non-obstructive corner. Moves to the
-     status bar in studio-layout ticket 05. */
-  .zoom-indicator {
-    position: absolute;
-    right: 12px;
-    bottom: 12px;
-    font: inherit;
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
-    color: var(--af-ink-secondary);
-    background: var(--af-surface-raised);
-    border: none;
-    border-radius: var(--af-radius-sm);
-    padding: 4px 8px;
-    box-shadow: var(--af-shadow-e1);
-    cursor: pointer;
-  }
-
-  .zoom-indicator:hover {
-    color: var(--af-ink-primary);
-  }
-
-  .zoom-indicator:focus-visible {
-    outline: 2px solid var(--af-accent);
-    outline-offset: 1px;
   }
 </style>

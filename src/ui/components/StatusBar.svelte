@@ -1,7 +1,8 @@
 <script lang="ts">
   // 15_UX_SPECIFICATION.md §6/W1 — StatusBar: 28px. Sync remains unwired (no cloud sync yet, PD-012
   // stages 2-3). Snap indicator (Tool Dock slice), ScaleChip (Calibration UI slice, 15 §5 F2 step
-  // 5: "клик → рекалибриране"), and the Unit selector (PO request, expanded unit system) are live.
+  // 5: "клик → рекалибриране"), the Unit selector (PO request, expanded unit system) and the zoom %
+  // (moved here from the canvas corner, 15 §2.2 Photoshop layout, 2026-10-11) are live.
   import { snapEnabled, toggleSnap, activeTool } from '../stores/drawingSession.js';
   import { openShortcutsOverlay } from '../stores/shortcutsOverlaySession.js';
   import Icon from './Icon.svelte';
@@ -11,6 +12,7 @@
   import { displayUnit } from '../stores/unitPreferenceSession.js';
   import { convertLengthFromMeters } from '../../core/measurement/unitConversion.js';
   import UnitSelector from './UnitSelector.svelte';
+  import { viewport, requestZoomReset, requestFitToContent } from '../stores/viewportSession.js';
   import type { Unit } from '../../core/domain/types.js';
 
   // PO request (expanded unit system, §5 "calibration display" must respect the chosen unit) —
@@ -31,6 +33,10 @@
     const trimmed = converted.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
     return `1 px = ${trimmed} ${label}`;
   }
+
+  // PO request (zoom %) — "reflect the true renderer viewport scale... do not maintain a duplicate
+  // independent UI value": a plain derived read of $viewport, never its own stored number.
+  $: zoomPercent = Math.round($viewport.scale * 100);
 
   $: calibration = $activeSurface?.calibration ?? null;
   // PO follow-up (UX review, item B3 "amber Not-calibrated chip") — every value in the app reads
@@ -114,6 +120,17 @@
     <Icon name="magnet" size={12} /> snap {$snapEnabled ? 'on' : 'off'}
   </button>
   <UnitSelector />
+  <button
+    type="button"
+    class="zoom-indicator"
+    on:click={requestZoomReset}
+    on:dblclick={requestFitToContent}
+    title="Click: reset to 100%. Double-click: zoom to fit"
+    aria-label="Zoom level {zoomPercent}% — click to reset to 100%, double-click to zoom to fit"
+    data-testid="zoom-indicator"
+  >
+    {zoomPercent}%
+  </button>
   {#if contextHint}
     <span class="context-hint" data-testid="context-hint">{contextHint}</span>
   {/if}
@@ -151,6 +168,29 @@
     font-size: 11.5px;
     color: var(--af-ink-secondary);
     cursor: pointer;
+  }
+
+  .zoom-indicator {
+    min-width: 44px;
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    border-radius: var(--af-radius-sm);
+    font: inherit;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-ink-secondary);
+    cursor: pointer;
+  }
+
+  .zoom-indicator:hover {
+    background: var(--af-surface-app);
+    color: var(--af-ink-primary);
+  }
+
+  .zoom-indicator:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: 1px;
   }
 
   .snap-indicator:hover {

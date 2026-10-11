@@ -1,6 +1,15 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { viewport, panDrag, startPan, panTo, endPan, resetViewport } from './viewportSession.js';
+import {
+  viewport,
+  panDrag,
+  startPan,
+  panTo,
+  endPan,
+  resetViewport,
+  zoomResetRequested,
+  requestZoomReset,
+} from './viewportSession.js';
 
 // PO follow-up ("replace Select tool with Pan") — the one shared pan-drag lifecycle
 // (CanvasStage.svelte calls this identically from the explicit Pan tool and the Space/
@@ -46,5 +55,23 @@ describe('startPan / panTo / endPan', () => {
     startPan(0, 0);
     panTo(50, 50);
     expect(get(viewport).scale).toBe(1);
+  });
+});
+
+// 15 §2.2 (Photoshop layout, 2026-10-11) — the zoom % lives in the status bar, which doesn't know
+// the canvas box; it asks for a reset and CanvasStage anchors it at the canvas center.
+describe('requestZoomReset', () => {
+  it('bumps the reset signal every time, so repeated clicks each trigger a reset', () => {
+    const start = get(zoomResetRequested);
+    requestZoomReset();
+    expect(get(zoomResetRequested)).toBe(start + 1);
+    requestZoomReset();
+    expect(get(zoomResetRequested)).toBe(start + 2);
+  });
+
+  it('only signals — the viewport itself is untouched until CanvasStage reacts', () => {
+    const before = get(viewport);
+    requestZoomReset();
+    expect(get(viewport)).toEqual(before);
   });
 });
