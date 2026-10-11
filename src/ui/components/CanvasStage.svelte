@@ -96,6 +96,7 @@
     endPan,
   } from '../stores/viewportSession.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
+  import { viewOnly } from '../stores/panelLayoutSession.js';
   import { screenToWorld, worldToScreen, fitBounds } from '../viewport/viewport.js';
   import { exceedsDragThreshold } from '../interaction/dragThreshold.js';
   import { canSplit, split } from '../../core/drawing/split.js';
@@ -465,6 +466,15 @@
     }
     if ($calibrating || $splittingId || $activeTool !== null) return;
     const point = toSurfacePoint(event);
+    if ($viewOnly) {
+      // View-only selects on click (mousedown pans there, so it can't select like the editing
+      // state does) — reading a shape's values in Properties is part of viewing.
+      const hitId = $activeSurface ? findMeasurementAt($activeSurface, point, selectHitTolerance) : null;
+      if (hitId) {
+        selectMeasurement(hitId);
+        return;
+      }
+    }
     if (currentImageRect && pointInRect(point, currentImageRect)) {
       if (imageLocked) flashBackgroundLock();
       selectBackground();
@@ -480,6 +490,13 @@
     if ($labelDrag) return;
     if (isPanTrigger(event)) {
       startOverridePan(event);
+      return;
+    }
+    if ($viewOnly) {
+      // PD-022 / 15 §11 — view-only: every drag pans, like the Pan tool; a plain click still
+      // selects (onClick), so the values can be read in Properties.
+      startPan(event.clientX, event.clientY);
+      emptyCanvasPanStart = { clientX: event.clientX, clientY: event.clientY };
       return;
     }
     const modifiers = { shiftKey: event.shiftKey, altKey: event.altKey };
@@ -698,7 +715,7 @@
   // double-click no longer has an "enter edit mode" job to do). Over a Polygon being drawn, still
   // closes it regardless of self-snap proximity (§5 F1 step 6) instead.
   function onDblClick(event: MouseEvent): void {
-    if ($calibrating || $splittingId) return;
+    if ($calibrating || $splittingId || $viewOnly) return;
     if ($activeTool === 'polygon') {
       handleEnter();
       return;
@@ -948,7 +965,7 @@
   // Chips accept pointer events (click-select, double-click inline rename — PO request) only in
   // the neutral interaction state; while any drawing/Pan/calibration/split flow owns the pointer
   // they stay click-through, exactly as before.
-  $: chipsInteractive = $activeTool === null && !$calibrating && !$splittingId;
+  $: chipsInteractive = $activeTool === null && !$calibrating && !$splittingId && !$viewOnly;
 
   function renameMeasurement(id: string, name: string): void {
     const surface = $activeSurface;
@@ -1042,7 +1059,7 @@
   ></canvas>
   {#if showEmptyCanvasHint}
     <p class="empty-hint" data-testid="empty-canvas-hint">
-      Import a plan, or choose a tool on the left to start drawing
+      {$viewOnly ? 'Nothing to show yet' : 'Import a plan, or choose a tool on the left to start drawing'}
     </p>
   {/if}
   {#each chips as chip (chip.id)}

@@ -9,6 +9,15 @@ import {
   nudgePropertiesShare,
   resetPropertiesShare,
   shareFromPointer,
+  layoutModeForWidth,
+  layoutMode,
+  viewOnly,
+  setViewportWidth,
+  sidePanelsHidden,
+  toggleSidePanels,
+  rightOverlayOpen,
+  toggleRightOverlay,
+  closeRightOverlay,
 } from './panelLayoutSession.js';
 
 // 15 §2.2 (Photoshop layout, 2026-10-11) — the right column's divider between Properties (top)
@@ -16,6 +25,9 @@ import {
 
 beforeEach(() => {
   resetPropertiesShare();
+  setViewportWidth(1400);
+  sidePanelsHidden.set(false);
+  closeRightOverlay();
 });
 
 describe('panelLayoutSession — Properties/Layers divider', () => {
@@ -68,5 +80,81 @@ describe('shareFromPointer', () => {
 
   it('falls back to the default for a column with no height yet', () => {
     expect(shareFromPointer(300, 100, 0)).toBe(DEFAULT_PROPERTIES_SHARE);
+  });
+});
+
+// 15 §11 (Photoshop layout, 2026-10-11) — screen sizes and the Tab toggle.
+describe('layoutModeForWidth', () => {
+  it('is the full layout from 1280px up', () => {
+    expect(layoutModeForWidth(1280)).toBe('full');
+    expect(layoutModeForWidth(1920)).toBe('full');
+  });
+
+  it('is compact (right column as an overlay) from 1024 to 1279px', () => {
+    expect(layoutModeForWidth(1024)).toBe('compact');
+    expect(layoutModeForWidth(1279)).toBe('compact');
+  });
+
+  it('is view-only below 1024px (PD-022)', () => {
+    expect(layoutModeForWidth(1023)).toBe('view');
+    expect(layoutModeForWidth(390)).toBe('view');
+  });
+});
+
+describe('setViewportWidth', () => {
+  it('sets the layout mode and viewOnly from the width', () => {
+    setViewportWidth(1200);
+    expect(get(layoutMode)).toBe('compact');
+    expect(get(viewOnly)).toBe(false);
+    setViewportWidth(900);
+    expect(get(layoutMode)).toBe('view');
+    expect(get(viewOnly)).toBe(true);
+  });
+
+  it('closes the right-column overlay when the window grows back to the full layout', () => {
+    setViewportWidth(1200);
+    toggleRightOverlay();
+    expect(get(rightOverlayOpen)).toBe(true);
+    setViewportWidth(1400);
+    expect(get(rightOverlayOpen)).toBe(false);
+  });
+
+  it('keeps the overlay open while resizing within the overlay sizes', () => {
+    setViewportWidth(1200);
+    toggleRightOverlay();
+    setViewportWidth(900);
+    expect(get(rightOverlayOpen)).toBe(true);
+  });
+});
+
+describe('toggleSidePanels (Tab)', () => {
+  it('hides and shows both side columns', () => {
+    expect(get(sidePanelsHidden)).toBe(false);
+    toggleSidePanels();
+    expect(get(sidePanelsHidden)).toBe(true);
+    toggleSidePanels();
+    expect(get(sidePanelsHidden)).toBe(false);
+  });
+
+  it('also closes an open right-column overlay when hiding', () => {
+    setViewportWidth(1200);
+    toggleRightOverlay();
+    toggleSidePanels();
+    expect(get(rightOverlayOpen)).toBe(false);
+  });
+});
+
+describe('toggleRightOverlay', () => {
+  it('opens and closes the overlay', () => {
+    setViewportWidth(1200);
+    toggleRightOverlay();
+    expect(get(rightOverlayOpen)).toBe(true);
+    toggleRightOverlay();
+    expect(get(rightOverlayOpen)).toBe(false);
+  });
+
+  it('does nothing in the full layout, where the column is always docked', () => {
+    toggleRightOverlay();
+    expect(get(rightOverlayOpen)).toBe(false);
   });
 });

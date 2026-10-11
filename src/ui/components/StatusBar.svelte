@@ -13,6 +13,7 @@
   import { convertLengthFromMeters } from '../../core/measurement/unitConversion.js';
   import UnitSelector from './UnitSelector.svelte';
   import { viewport, requestZoomReset, requestFitToContent } from '../stores/viewportSession.js';
+  import { viewOnly } from '../stores/panelLayoutSession.js';
   import type { Unit } from '../../core/domain/types.js';
 
   // PO request (expanded unit system, §5 "calibration display" must respect the chosen unit) —
@@ -80,7 +81,10 @@
     line: 'Click both ends of the distance to measure',
   };
 
-  $: contextHint = $calibrating
+  $: contextHint = $viewOnly
+    ? // PD-022 / 15 §11 — says why nothing can be edited, and how to get editing back.
+      'View only on a small screen — widen the window to 1024px or more to edit'
+    : $calibrating
     ? null
     : $splittingId
       ? 'Click points across the shape, then Enter to confirm the split'
@@ -110,6 +114,7 @@
       class:warning={isImplausible}
       class:uncalibrated={isUncalibrated}
       title={isUncalibrated ? 'Measurements are shown in pixels until you set a scale — click to calibrate' : scaleWarningTooltip}
+      disabled={$viewOnly}
       on:click={startCalibration}
       data-testid="scale-chip"
     >
@@ -211,6 +216,11 @@
     font-variant-numeric: tabular-nums;
     color: var(--af-ink-secondary);
     cursor: pointer;
+  }
+
+  .scale-chip:disabled {
+    cursor: default;
+    pointer-events: none;
   }
 
   .scale-chip:hover {

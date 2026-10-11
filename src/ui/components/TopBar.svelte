@@ -23,6 +23,7 @@
   import { tick } from 'svelte';
   import ImportButton from './ImportButton.svelte';
   import AccountMenu from './AccountMenu.svelte';
+  import { viewOnly } from '../stores/panelLayoutSession.js';
 
   export let projectName: string | null = null;
 
@@ -56,7 +57,7 @@
   let inputEl: HTMLInputElement | undefined;
 
   function startEditing(): void {
-    if (projectName === null) return; // only renameable when a project is actually open
+    if (projectName === null || $viewOnly) return; // only renameable when a project is open, and not view-only (PD-022)
     editing = true;
     nameDraft = projectName;
     void tick().then(() => {
@@ -127,6 +128,8 @@
     {/if}
   {/if}
 
+  <!-- PD-022 / 15 §11 — view-only (<1024px): the bar keeps only the title, Export and the account. -->
+  {#if !$viewOnly}
   <div class="history-controls">
     <button
       type="button"
@@ -152,9 +155,13 @@
     </button>
   </div>
 
+  {/if}
+
   <span class="spacer"></span>
 
-  <ImportButton />
+  {#if !$viewOnly}
+    <ImportButton />
+  {/if}
   <button
     type="button"
     class="export-button"

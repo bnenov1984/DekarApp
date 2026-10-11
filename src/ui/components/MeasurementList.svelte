@@ -23,6 +23,7 @@
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
   import { computeMeasurementDisplay, applyManualArea, formatAreaValue } from '../measurement/computeDisplay.js';
   import Icon from './Icon.svelte';
+  import { viewOnly } from '../stores/panelLayoutSession.js'; // PD-022 — view-only disables the row toggles and drag-reorder
   import { displayUnit } from '../stores/unitPreferenceSession.js';
   import { splittingId } from '../stores/splitSession.js';
   import { openContextMenu } from '../contextMenu/contextMenuSession.js';
@@ -262,6 +263,7 @@
             class="eye-toggle"
             class:off={row.hidden}
             title={row.hidden ? 'Show on canvas' : 'Hide from canvas'}
+            disabled={$viewOnly}
             on:click={() => toggleHidden(row.id)}
             data-testid="visibility-toggle-{row.id}"
           >
@@ -277,6 +279,7 @@
             class="lock-toggle-row"
             class:locked-on={row.locked}
             title={row.locked ? 'Unlock to move, resize, or delete' : 'Lock to prevent moving, resizing, or deleting'}
+            disabled={$viewOnly}
             on:click={() => toggleLocked(row.id, row.locked)}
             data-testid="measurement-lock-toggle-{row.id}"
           >
@@ -292,7 +295,7 @@
             class:hidden-row={row.hidden}
             class:locked-row={row.locked}
             style={row.depth > 0 ? `padding-left: ${9 + row.depth * 22}px` : undefined}
-            draggable="true"
+            draggable={!$viewOnly}
             on:click={(e) => (e.shiftKey ? toggleMeasurementSelection(row.id) : selectMeasurement(row.id))}
             on:contextmenu={(e) => onRowContextMenu(e, row.id)}
             on:dragstart={(e) => handleDragStart(row.id, e)}
@@ -318,6 +321,7 @@
             class="lock-toggle"
             class:flash={lockFlashing}
             title={imageLocked ? 'Unlock to move or resize' : 'Lock to prevent moving or resizing'}
+            disabled={$viewOnly}
             on:click={() => setImageLocked(!imageLocked)}
             data-testid="background-lock-toggle"
           >
@@ -388,6 +392,14 @@
     display: flex;
     align-items: stretch;
     gap: 2px;
+  }
+
+  /* View-only (PD-022): the toggles still show the state, they just can't be clicked. */
+  .eye-toggle:disabled,
+  .lock-toggle-row:disabled,
+  .lock-toggle:disabled {
+    cursor: default;
+    pointer-events: none;
   }
 
   .eye-toggle {

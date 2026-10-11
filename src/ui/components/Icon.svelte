@@ -25,6 +25,7 @@
     | 'line'
     | 'split'
     | 'trash'
+    | 'layers'
     | 'user';
   export let size = 16;
 </script>
@@ -101,6 +102,10 @@
     <path d="M4 7h16" />
     <path d="M9.5 7V4.5h5V7" />
     <path d="M6.5 7l1 12.5h9l1-12.5" />
+  {:else if name === 'layers'}
+    <path d="M12 3.5 3 8l9 4.5L21 8z" />
+    <path d="m3 12 9 4.5 9-4.5" />
+    <path d="m3 16 9 4.5 9-4.5" />
   {:else if name === 'user'}
     <circle cx="12" cy="8" r="3.6" />
     <path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5" />

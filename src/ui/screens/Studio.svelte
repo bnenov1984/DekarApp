@@ -25,8 +25,19 @@
   } from '../stores/studioSession.js';
   import { activeTool, handleEnter, handleEscape, setTool, toggleSnap, type DrawingTool } from '../stores/drawingSession.js';
   import { calibrating, cancelCalibration } from '../stores/calibrationSession.js';
+  import {
+    layoutMode,
+    viewOnly,
+    setViewportWidth,
+    sidePanelsHidden,
+    toggleSidePanels,
+    rightOverlayOpen,
+    toggleRightOverlay,
+    closeRightOverlay,
+  } from '../stores/panelLayoutSession.js';
+  import Icon from '../components/Icon.svelte';
   import { cancelDrag } from '../stores/vertexEditSession.js';
-  import { splittingId, startSplit, cancelSplit, confirmSplit } from '../stores/splitSession.js';
+  import { splittingId, startSplit, cancelSplit, confirmSplit, closeSplitConfig } from '../stores/splitSession.js';
   import { requestFitToContent } from '../stores/viewportSession.js';
   import { shortcutsOverlayOpen, openShortcutsOverlay, closeShortcutsOverlay } from '../stores/shortcutsOverlaySession.js';
 
@@ -57,6 +68,31 @@
   // PO follow-up (UX review, item A8 "shortcuts help overlay") — `?` toggles a static reference
   // panel (ShortcutsOverlay.svelte). While it's open, every other shortcut is swallowed (typical
   // modal behavior) except the two that close it again.
+  // 15 §11 — the layout follows the window width (full / compact / view-only).
+  let innerWidth = typeof window === 'undefined' ? 1400 : window.innerWidth;
+  $: setViewportWidth(innerWidth);
+
+  // Dropping into view-only (PD-022) ends whatever editing was in progress — nothing it could
+  // commit would be accepted anyway (studioSession.ts refuses every command there).
+  $: if ($viewOnly) leaveEditing();
+
+  function leaveEditing(): void {
+    setTool(null);
+    cancelCalibration();
+    cancelSplit();
+    closeSplitConfig();
+    cancelDrag();
+    closeContextMenu();
+  }
+
+  // Tab hides/shows both side columns (15 §11, Photoshop idiom) — only when focus isn't on a
+  // field or a control, so keyboard navigation through the panels' own controls keeps working.
+  function isControlTarget(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
+    if (!el || el === document.body) return false;
+    return el.closest('button, a[href], input, textarea, select, [tabindex], [contenteditable="true"]') !== null;
+  }
+
   function onKeydown(event: KeyboardEvent): void {
     if ($shortcutsOverlayOpen) {
       if (event.key === 'Escape' || event.key === '?') {
@@ -75,6 +111,29 @@
     }
 
     const mod = event.ctrlKey || event.metaKey;
+
+    if (event.key === 'Tab' && !mod && !event.altKey && !isControlTarget(event.target)) {
+      event.preventDefault();
+      toggleSidePanels();
+      return;
+    }
+
+    if ($viewOnly) {
+      // PD-022 — view-only keeps only the viewing shortcuts: help, Escape, zoom to fit.
+      if (isTypingTarget(event.target)) return;
+      if (event.key === '?') {
+        event.preventDefault();
+        openShortcutsOverlay();
+      } else if (event.key === 'Escape') {
+        closeRightOverlay();
+        deselectAll();
+      } else if (event.code === 'Digit1' && event.shiftKey) {
+        event.preventDefault();
+        requestFitToContent();
+      }
+      return;
+    }
+
     if (mod) {
       const key = event.key.toLowerCase();
       if (key === 'z' && event.shiftKey) {
@@ -104,6 +163,7 @@
     }
 
     if (event.key === 'Escape') {
+      closeRightOverlay();
       // Harmless no-op on whichever of the four isn't currently active (drawingSession.handleEscape
       // clears a null draft silently; the other three cancel/exit functions are no-ops when not active).
       cancelCalibration();
@@ -176,16 +236,46 @@
   }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window on:keydown={onKeydown} bind:innerWidth />
 
 <div class="shell">
   <TopBar projectName={$appState.project?.name ?? null} />
   <ImportCalibrationBanner />
   <CalibrationBar />
+  <!-- 15 §11 — ≥1280: tool bar, canvas, docked right column. 1024–1279: the right column is a
+       strip on the edge that opens it as an overlay (the canvas doesn't shrink). <1024 view-only:
+       no tool bar. Tab hides both side columns at any width. -->
   <div class="main">
-    <ToolDock />
-    <CanvasStage />
-    <RightColumn />
+    {#if !$viewOnly && !$sidePanelsHidden}
+      <ToolDock />
+    {/if}
+    <div class="canvas-area">
+      <CanvasStage />
+      {#if $layoutMode !== 'full' && !$sidePanelsHidden && $rightOverlayOpen}
+        <div class="right-overlay" data-testid="right-column-overlay">
+          <RightColumn />
+        </div>
+      {/if}
+    </div>
+    {#if !$sidePanelsHidden}
+      {#if $layoutMode === 'full'}
+        <RightColumn />
+      {:else}
+        <button
+          type="button"
+          class="right-strip"
+          class:open={$rightOverlayOpen}
+          aria-expanded={$rightOverlayOpen}
+          aria-label={$rightOverlayOpen ? 'Close Properties and Layers' : 'Open Properties and Layers'}
+          title="Properties and Layers"
+          data-testid="right-column-strip"
+          on:click={toggleRightOverlay}
+        >
+          <Icon name="layers" size={16} />
+          <span class="right-strip-label">Properties · Layers</span>
+        </button>
+      {/if}
+    {/if}
   </div>
   <StatusBar />
 </div>
@@ -203,5 +293,56 @@
     flex: 1;
     display: flex;
     min-height: 0;
+  }
+
+  /* Holds the canvas and, at compact/view-only sizes, the right column overlaid on its right edge. */
+  .canvas-area {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+
+  .right-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    box-shadow: var(--af-shadow-e2);
+  }
+
+  .right-strip {
+    flex: 0 0 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--af-ink-secondary);
+    background: var(--af-surface-panel);
+    border: none;
+    border-left: 1px solid var(--af-border-subtle);
+    cursor: pointer;
+  }
+
+  .right-strip:hover,
+  .right-strip.open {
+    color: var(--af-ink-primary);
+    background: var(--af-surface-app);
+  }
+
+  .right-strip:focus-visible {
+    outline: 2px solid var(--af-accent);
+    outline-offset: -2px;
+  }
+
+  .right-strip-label {
+    writing-mode: vertical-rl;
+    white-space: nowrap;
   }
 </style>

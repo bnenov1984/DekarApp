@@ -34,6 +34,7 @@ import { createMeasurementCommand } from '../../application/commands/createMeasu
 import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
 import { splitCommand } from '../../application/commands/split.js';
 import type { Surface } from '../../core/domain/entities.js';
+import { setViewportWidth } from './panelLayoutSession.js';
 
 // UI-layer session store exercised with a REAL Application command (not a mock) — this is the
 // integration seam the commit exists to prove: UI -> studioSession -> CommandStack -> Core,
@@ -688,5 +689,45 @@ describe('studioSession — setVertexLabel', () => {
 
     undo();
     expect(get(activeSurface)).toEqual(before);
+  });
+});
+
+// PD-022 / 15 §11 — below 1024px the Studio is view-only: nothing may change the project, whichever
+// control (or shortcut) asked. The UI hides the editing controls too; this is the guarantee.
+describe('studioSession — view-only (PD-022)', () => {
+  beforeEach(() => {
+    setViewportWidth(1400);
+    initStudioSession(blankSurface());
+    executeCommand(buildCreateSquare('m1'));
+  });
+
+  it('executeCommand changes nothing in view-only', () => {
+    setViewportWidth(900);
+    const before = get(activeSurface);
+    executeCommand(buildCreateSquare('m2'));
+    expect(get(activeSurface)).toBe(before);
+    setViewportWidth(1400);
+  });
+
+  it('undo and redo change nothing in view-only', () => {
+    setViewportWidth(900);
+    const before = get(activeSurface);
+    undo();
+    expect(get(activeSurface)).toBe(before);
+    setViewportWidth(1400);
+    undo();
+    setViewportWidth(900);
+    const afterUndo = get(activeSurface);
+    redo();
+    expect(get(activeSurface)).toBe(afterUndo);
+    setViewportWidth(1400);
+  });
+
+  it('editing works again once the window is wide enough', () => {
+    setViewportWidth(900);
+    setViewportWidth(1200);
+    executeCommand(buildCreateSquare('m2'));
+    expect(get(activeSurface)!.layers[0]!.measurements).toHaveLength(2);
+    setViewportWidth(1400);
   });
 });

@@ -10,9 +10,10 @@
   import { activeSurface } from '../stores/studioSession.js';
   import { showImportCalibrationHint, dismissImportCalibrationHint } from '../stores/appState.js';
   import { startCalibration, calibrating } from '../stores/calibrationSession.js';
+  import { viewOnly } from '../stores/panelLayoutSession.js';
 
   $: calibration = $activeSurface?.calibration ?? null;
-  $: visible = $showImportCalibrationHint && calibration === null && !$calibrating;
+  $: visible = $showImportCalibrationHint && calibration === null && !$calibrating && !$viewOnly; // calibrating edits the project (PD-022)
 
   function onCalibrateClick(): void {
     dismissImportCalibrationHint();

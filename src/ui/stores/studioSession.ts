@@ -13,6 +13,7 @@ import { setMeasurementLockedCommand } from '../../application/commands/setMeasu
 import { setVertexLabelCommand } from '../../application/commands/setVertexLabel.js';
 import { setManualAreaCommand } from '../../application/commands/setManualArea.js';
 import { setLabelOffsetCommand } from '../../application/commands/setLabelOffset.js';
+import { viewOnly } from './panelLayoutSession.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
 // import; the reverse would fail the ESLint boundaries rule). One CommandStack per Project
@@ -187,7 +188,11 @@ export function flashBackgroundLock(): void {
  * Throws propagate untouched (validation errors etc. — CommandStack guarantees the stack is
  * unpolluted, commandStack.ts); callers translate them to non-blocking hints (15 §16).
  */
+// PD-022 / 15 §11 — below 1024px the Studio is view-only. Every change to the project goes through
+// executeCommand/undo/redo, so refusing here is the guarantee; the UI also hides the editing
+// controls, so this normally never triggers.
 export function executeCommand(buildCommand: (surface: Surface) => Command<Surface>): void {
+  if (get(viewOnly)) return;
   const surface = get(activeSurface);
   if (!stack || !surface) throw new Error('executeCommand: no active studio session');
   const result = stack.execute(buildCommand(surface));
@@ -197,7 +202,7 @@ export function executeCommand(buildCommand: (surface: Surface) => Command<Surfa
 }
 
 export function undo(): void {
-  if (!stack) return;
+  if (!stack || get(viewOnly)) return;
   const restored = stack.undo<Surface>();
   if (restored !== undefined) {
     activeSurface.set(restored);
@@ -207,7 +212,7 @@ export function undo(): void {
 }
 
 export function redo(): void {
-  if (!stack) return;
+  if (!stack || get(viewOnly)) return;
   const result = stack.redo<Surface>();
   if (result !== undefined) {
     activeSurface.set(result);

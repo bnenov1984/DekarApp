@@ -34,6 +34,7 @@
   } from '../stores/splitSession.js';
   import { activeVertexLabel, clearActiveVertexLabel } from '../stores/vertexLabelSession.js';
   import Icon from './Icon.svelte';
+  import { viewOnly } from '../stores/panelLayoutSession.js';
   import {
     computeMeasurementDisplay,
     applyManualArea,
@@ -364,6 +365,9 @@
      RightColumn.svelte, which owns the column's width, so selecting or deselecting never changes
      the canvas size. -->
 <div class="panel" data-testid="property-panel">
+<!-- PD-022 / 15 §11 — view-only: one disabled fieldset turns off every field and button below at
+     once; the values stay readable. `display: contents`, so it adds no box to the layout. -->
+<fieldset class="panel-fieldset" disabled={$viewOnly}>
 {#if measurement}
   <!-- 16 §3.2 (Photoshop layout, 2026-10-11) — panel headers hold only the title; the actions
        live in the body (Split) and at the bottom (Delete). Lock is only on the Layers row. -->
@@ -718,6 +722,7 @@
     <p>Select a shape to see its properties.</p>
   </div>
 {/if}
+</fieldset>
 </div>
 
 <style>
@@ -729,6 +734,10 @@
     gap: 14px;
     padding: 10px 12px;
     overflow: auto;
+  }
+
+  .panel-fieldset {
+    display: contents;
   }
 
   .header-row {
@@ -808,9 +817,15 @@
     outline-offset: 1px;
   }
 
-  .secondary-button:disabled,
-  .delete-button:disabled {
+  .secondary-button:disabled {
     opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Not opacity: the sticky button's own background masks the content scrolling under it, and a
+     translucent button would let that content show through. */
+  .delete-button:disabled {
+    color: color-mix(in srgb, var(--af-ink-tertiary) 45%, var(--af-surface-panel));
     cursor: not-allowed;
   }
 

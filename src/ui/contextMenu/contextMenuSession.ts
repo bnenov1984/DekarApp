@@ -1,4 +1,5 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
+import { viewOnly } from '../stores/panelLayoutSession.js';
 
 // PO follow-up (UX review, item A14 "no context menus") — professionals' muscle memory is
 // right-click -> verb; before this, right-click did nothing anywhere in the app (canvas rows,
@@ -25,6 +26,7 @@ export interface ContextMenuState {
 export const contextMenu = writable<ContextMenuState | null>(null);
 
 export function openContextMenu(x: number, y: number, items: readonly ContextMenuItem[]): void {
+  if (get(viewOnly)) return; // PD-022 — every item here edits the project
   if (items.length === 0) return; // nothing to show — same "no-op, don't show an empty menu" discipline as everywhere else
   contextMenu.set({ x, y, items });
 }
