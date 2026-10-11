@@ -4,7 +4,7 @@ import { removeVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
 import { removeLabelAt, withVertexLabels } from '../vertexLabels.js';
 import { rebalanceSplitGroups } from '../splitGroup.js';
-import { findLinkedVertices, type VertexRef } from '../sharedVertices.js';
+import { findLinkedVertices, assertNoParticipantTurnedInsideOut, type VertexRef } from '../sharedVertices.js';
 
 export interface RemoveVertexParams {
   readonly surface: Surface;
@@ -59,6 +59,8 @@ export function removeVertexCommand(params: RemoveVertexParams): Command<Surface
         const vertexLabels = removeLabelAt(measurement.vertexLabels, ref.vertexIndex);
         return replaceMeasurement(surface, ref.measurementId, withVertexLabels({ ...measurement, shape: result.value }, vertexLabels));
       }, before);
+      // PD-025 — no closed participant may end up wound the other way round (lying on its neighbour).
+      assertNoParticipantTurnedInsideOut(before, edited, participants.map((ref) => ref.measurementId), 'removeVertexCommand');
       // PD-021 — see editVertex.ts; removing a vertex changes the part's area, so its Split group
       // (if any) redistributes to keep summing to the parent's total.
       return participants.reduce((surface, ref) => rebalanceSplitGroups(surface, ref.measurementId), edited);

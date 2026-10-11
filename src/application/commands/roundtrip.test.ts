@@ -1542,6 +1542,64 @@ describe('PD-024 — shared vertices (INV-19, T-INV-19)', () => {
     );
   });
 
+  // PD-025 — a linked edit that would turn any closed participant inside out is rejected whole.
+  // A cut near the top-left corner of a 10×10 square leaves a small triangle part; dragging their
+  // shared point (2,10) to (-2,12) crosses the line through the triangle's other two corners.
+  function cornerSplit(stack: CommandStack): Surface {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    return stack.execute<Surface>(
+      splitCommand({
+        surface: makeTestSurface([{ ...parcel(), shape: { type: 'polygon', vertices: square } }]),
+        parentMeasurementId: 'parcel',
+        splitLine: [{ x: -0.2, y: 7.8 }, { x: 2.2, y: 10.2 }],
+        childIds: ['partA', 'partB'],
+      }),
+    );
+  }
+
+  it('PD-025: a linked drag that would turn a part inside out is rejected whole', () => {
+    const stack = new CommandStack();
+    const afterSplit = cornerSplit(stack);
+    const depthBefore = stack.undoDepth;
+    expect(() => moveVertex(stack, afterSplit, 'partA', [2, 10], [-2, 12])).toThrow(/inside out/);
+    expect(stack.undoDepth).toBe(depthBefore);
+  });
+
+  it('PD-025: the same drag stays allowed short of the line, and as a Ctrl/Cmd single-shape drag', () => {
+    const stack = new CommandStack();
+    const afterSplit = cornerSplit(stack);
+    const nearer = moveVertex(stack, afterSplit, 'partA', [2, 10], [1, 11]);
+    expect(hasVertexAt(nearer, 'partB', 1, 11)).toBe(true);
+    const detached = stack.execute<Surface>(
+      editVertexCommand({ surface: afterSplit, measurementId: 'partA', vertexIndex: indexAt(afterSplit, 'partA', 2, 10), newPosition: { x: -2, y: 12 }, linked: false }),
+    );
+    expect(hasVertexAt(detached, 'partA', -2, 12)).toBe(true);
+  });
+
+  it('PD-025: a linked insert on a shared edge that would turn a part inside out is rejected whole', () => {
+    const stack = new CommandStack();
+    const afterSplit = cornerSplit(stack);
+    const a = vertices(afterSplit, 'partA');
+    const edge = a.findIndex((p, i) => Math.abs(p.x - 2) < 1e-9 && Math.abs(p.y - 10) < 1e-9 && Math.abs(a[(i + 1) % a.length]!.x) < 1e-9);
+    expect(edge).toBeGreaterThanOrEqual(0); // partA's edge (2,10)→(0,8), shared with the triangle
+    expect(() => stack.execute<Surface>(addVertexCommand({ surface: afterSplit, measurementId: 'partA', edgeIndex: edge, position: { x: -5, y: 15 } }))).toThrow(
+      /inside out/,
+    );
+  });
+
+  it('PD-025: a linked delete that would turn a neighbour inside out is rejected whole; alone it is allowed', () => {
+    // Removing the arrowhead's tip (5,-10) leaves the triangle (0,0),(10,0),(5,-1) — wound the
+    // other way round. `tail` shares the tip.
+    const arrowhead = { ...parcel(), id: 'arrowhead', shape: { type: 'polygon' as const, vertices: [{ x: 0, y: 0 }, { x: 5, y: -10 }, { x: 10, y: 0 }, { x: 5, y: -1 }] } };
+    const tail = { ...parcel(), id: 'tail', shape: { type: 'polygon' as const, vertices: [{ x: 5, y: -10 }, { x: 20, y: -10 }, { x: 20, y: 0 }, { x: 15, y: 0 }] } };
+    const initial = makeTestSurface([arrowhead, tail]);
+    const stack = new CommandStack();
+    expect(() => stack.execute<Surface>(removeVertexCommand({ surface: initial, measurementId: 'tail', vertexIndex: 0 }))).toThrow(/inside out/);
+    expect(stack.canUndo()).toBe(false);
+    const alone = stack.execute<Surface>(removeVertexCommand({ surface: initial, measurementId: 'arrowhead', vertexIndex: 1, linked: false }));
+    expect(vertices(alone, 'arrowhead')).toHaveLength(3);
+  });
+
   // Two 10x10 squares side by side: left's edge 1 (10,0)→(10,10) is right's closing edge 3
   // (10,10)→(10,0), so a shared edge is matched in the opposite direction and across the wrap.
   function sideBySide(): Surface {

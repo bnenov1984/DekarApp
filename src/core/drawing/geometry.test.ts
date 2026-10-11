@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { isSimplePolygon, nearestPointOnSegment, segmentsIntersect } from './geometry.js';
+import { isSimplePolygon, nearestPointOnSegment, segmentsIntersect, signedArea, windingReversed } from './geometry.js';
+
+// PD-025 — a linked edit may not reverse a closed participant's winding.
+describe('signedArea / windingReversed', () => {
+  const ccw = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 0, y: 2 }];
+  const cw = [...ccw].reverse();
+
+  it('is positive one way round, negative the other, half the shoelace magnitude', () => {
+    expect(signedArea(ccw)).toBe(4);
+    expect(signedArea(cw)).toBe(-4);
+    expect(signedArea([{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }])).toBe(0);
+  });
+
+  it('windingReversed: the sign flipped, or the area collapsed to zero', () => {
+    expect(windingReversed(ccw, cw)).toBe(true);
+    expect(windingReversed(ccw, [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 3 }])).toBe(false);
+    expect(windingReversed(ccw, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }])).toBe(true);
+  });
+
+  it('windingReversed: a shape that already had no area has no winding to reverse', () => {
+    const flat = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }];
+    expect(windingReversed(flat, cw)).toBe(false);
+  });
+});
 
 describe('segmentsIntersect', () => {
   it('detects a crossing X pattern', () => {

@@ -5,7 +5,7 @@ import { addVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
 import { insertLabelAt, withVertexLabels } from '../vertexLabels.js';
 import { rebalanceSplitGroups } from '../splitGroup.js';
-import { findSharedEdges, type EdgeRef } from '../sharedVertices.js';
+import { findSharedEdges, assertNoParticipantTurnedInsideOut, type EdgeRef } from '../sharedVertices.js';
 
 export interface AddVertexParams {
   readonly surface: Surface;
@@ -50,6 +50,8 @@ export function addVertexCommand(params: AddVertexParams): Command<Surface> {
         const vertexLabels = insertLabelAt(measurement.vertexLabels, ref.edgeIndex + 1);
         return replaceMeasurement(surface, ref.measurementId, withVertexLabels({ ...measurement, shape: newShape }, vertexLabels));
       }, before);
+      // PD-025 — no closed participant may end up wound the other way round (lying on its neighbour).
+      assertNoParticipantTurnedInsideOut(before, edited, participants.map((ref) => ref.measurementId), 'addVertexCommand');
       // PD-021 — see editVertex.ts; inserting a vertex changes the part's area, so its Split group
       // (if any) redistributes to keep summing to the parent's total.
       return participants.reduce((surface, ref) => rebalanceSplitGroups(surface, ref.measurementId), edited);

@@ -4,7 +4,7 @@ import type { Point } from '../../core/domain/types.js';
 import { editVertex } from '../../core/drawing/drawingEngine.js';
 import { findMeasurement, replaceMeasurement } from '../surfaceOps.js';
 import { rebalanceSplitGroups } from '../splitGroup.js';
-import { findLinkedVertices, type VertexRef } from '../sharedVertices.js';
+import { findLinkedVertices, assertNoParticipantTurnedInsideOut, type VertexRef } from '../sharedVertices.js';
 
 export interface EditVertexParams {
   readonly surface: Surface;
@@ -49,6 +49,8 @@ export function editVertexCommand(params: EditVertexParams): Command<Surface> {
         const shape = editVertex(measurement.shape, ref.vertexIndex, params.newPosition);
         return replaceMeasurement(surface, ref.measurementId, { ...measurement, shape });
       }, before);
+      // PD-025 — no closed participant may end up wound the other way round (lying on its neighbour).
+      assertNoParticipantTurnedInsideOut(before, edited, participants.map((ref) => ref.measurementId), 'editVertexCommand');
       // PD-021 — a reshaped part redistributes area within its Split group (splitGroup.ts); a no-op
       // for anything outside such a group. Each participant may sit in a different group. Undo is
       // unaffected: `before` is restored wholesale, so every participant reverts in one step.

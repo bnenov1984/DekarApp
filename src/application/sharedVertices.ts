@@ -2,6 +2,7 @@ import type { Measurement, MeasurementId, Surface } from '../core/domain/entitie
 import type { Point, Shape } from '../core/domain/types.js';
 import { pointOnSegmentInterior, pointsCoincide } from '../core/drawing/coincidence.js';
 import { addVertex } from '../core/drawing/drawingEngine.js';
+import { windingReversed } from '../core/drawing/geometry.js';
 import { editablePoints, isClosedEditable } from '../core/drawing/hitTest.js';
 import { findMeasurement, replaceMeasurement } from './surfaceOps.js';
 import { insertLabelAt, withVertexLabels } from './vertexLabels.js';
@@ -156,4 +157,31 @@ export function closeTJunctions(surface: Surface, points: readonly Point[], spli
       }, current),
     surface,
   );
+}
+
+/** PD-025 — whether a linked edit (two or more participants, each given as its shape before and
+ * after) would turn any closed participant inside out: e.g. a Split triangle whose shared vertex
+ * is dragged past the line through its other two corners would otherwise lie on top of its
+ * neighbour. A single-shape edit (Ctrl/⌘, or nothing linked) is never refused — one shape wound
+ * the other way round is still valid. Open curves/freehand have no winding. Shared by the vertex
+ * commands and vertexEditSession's live preview, so both apply the same rule. */
+export function linkedEditTurnsInsideOut(participants: readonly { readonly before: Shape; readonly after: Shape }[]): boolean {
+  if (participants.length < 2) return false;
+  return participants.some(
+    ({ before, after }) => isClosedEditable(before) && windingReversed(editablePoints(before)!, editablePoints(after)!),
+  );
+}
+
+/** The commands' side of `linkedEditTurnsInsideOut`: throws, so the command's do() fails whole. */
+export function assertNoParticipantTurnedInsideOut(
+  before: Surface,
+  after: Surface,
+  participantIds: readonly MeasurementId[],
+  commandName: string,
+): void {
+  const pairs = participantIds.map((id) => ({
+    before: findMeasurement(before, id)!.measurement.shape,
+    after: findMeasurement(after, id)!.measurement.shape,
+  }));
+  if (linkedEditTurnsInsideOut(pairs)) throw new Error(`${commandName}: a linked measurement would turn inside out`);
 }

@@ -57,6 +57,25 @@ export function isSimplePolygon(vertices: readonly Point[]): boolean {
   return true;
 }
 
+/** The polygon's area with a sign for its winding (shoelace): positive one way round, negative
+ * the other, 0 when it has no area. */
+export function signedArea(vertices: readonly Point[]): number {
+  let twice = 0;
+  for (let i = 0; i < vertices.length; i++) {
+    const p = vertices[i]!;
+    const q = vertices[(i + 1) % vertices.length]!;
+    twice += p.x * q.y - q.x * p.y;
+  }
+  return twice / 2;
+}
+
+/** PD-025 — `after` is wound the other way round from `before`, or has collapsed to no area. A
+ * `before` with no area has no winding to reverse. */
+export function windingReversed(before: readonly Point[], after: readonly Point[]): boolean {
+  const was = Math.sign(signedArea(before));
+  return was !== 0 && Math.sign(signedArea(after)) !== was;
+}
+
 export function nearestPointOnSegment(p: Point, a: Point, b: Point): Point {
   const abx = b.x - a.x;
   const aby = b.y - a.y;

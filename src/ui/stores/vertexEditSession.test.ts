@@ -595,3 +595,35 @@ describe('PD-024 — linked vertex drag', () => {
     expect(measurementShape('right')).toMatchObject({ vertices: [{ x: 100, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 100, y: 100 }] });
   });
 });
+
+// PD-025 — the preview applies the commands' "no linked part turns inside out" rule, so the drag
+// freezes at the last valid point instead of showing a flipped part that the drop would refuse.
+describe('PD-025 — a linked edit never turns a part inside out', () => {
+  function createPolygon(id: string, vertices: { x: number; y: number }[]): void {
+    executeCommand((surface) =>
+      createMeasurementCommand({ surface, layerId: 'layer1', measurementId: id, shapeParams: { type: 'polygon', vertices }, identity: { name: id, color: '#2E7D32' }, provenance: 'Manual' }),
+    );
+  }
+
+  it('a vertex drag freezes before the shared triangle would flip; the drop commits the last valid point', () => {
+    // A 100×100 square cut near its top-left corner: `big` and the triangle `tri` share (20,100).
+    createPolygon('big', [{ x: 0, y: 80 }, { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 20, y: 100 }]);
+    createPolygon('tri', [{ x: 20, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 80 }]);
+    pointerDown({ x: 20, y: 100 }, NO_MOD, 'big');
+    pointerMove({ x: 10, y: 110 }, NO_MOD);
+    pointerMove({ x: -20, y: 120 }, NO_MOD); // past the line x=0 through tri's other corners
+    const drag = get(vertexDrag);
+    expect(drag?.kind === 'vertex' && drag.lastValidPosition).toEqual({ x: 10, y: 110 });
+    pointerUp();
+    expect(measurementShape('tri')).toMatchObject({ vertices: [{ x: 10, y: 110 }, { x: 0, y: 100 }, { x: 0, y: 80 }] });
+  });
+
+  it('an Alt+click that would flip a linked neighbour does nothing', () => {
+    // Removing the arrowhead's tip (50,-100) would leave a triangle wound the other way round.
+    createPolygon('arrowhead', [{ x: 0, y: 0 }, { x: 50, y: -100 }, { x: 100, y: 0 }, { x: 50, y: -10 }]);
+    createPolygon('tail', [{ x: 50, y: -100 }, { x: 200, y: -100 }, { x: 200, y: 0 }, { x: 150, y: 0 }]);
+    const before = get(activeSurface);
+    expect(() => deleteVertexAt({ x: 50, y: -100 }, { shiftKey: false, altKey: true }, 'tail')).not.toThrow();
+    expect(get(activeSurface)).toBe(before);
+  });
+});

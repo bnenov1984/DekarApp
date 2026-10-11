@@ -18,7 +18,7 @@ import { removeVertexCommand } from '../../application/commands/removeVertex.js'
 import { resizeRectangleCommand } from '../../application/commands/resizeRectangle.js';
 import { resizeCircleCommand } from '../../application/commands/resizeCircle.js';
 import { translateMeasurementCommand } from '../../application/commands/translateMeasurement.js';
-import { findLinkedVertices, findSharedEdges, type VertexRef } from '../../application/sharedVertices.js';
+import { findLinkedVertices, findSharedEdges, linkedEditTurnsInsideOut, type VertexRef } from '../../application/sharedVertices.js';
 import { activeSurface, executeCommand } from './studioSession.js';
 import { snapEnabled } from './drawingSession.js';
 
@@ -312,9 +312,23 @@ export function deleteVertexAt(point: Point, modifiers: PointerModifiers, measur
 function deleteVertex(shape: Shape, measurementId: MeasurementId, vertexIndex: number, linked: readonly VertexRef[], detached: boolean): void {
   // Every participant must survive the deletion (too few vertices / would self-intersect), or
   // nothing happens — 18 §6 silent rejection, checked here because the command throws.
-  const allOk = removeVertex(shape, vertexIndex).ok &&
-    linked.every((ref) => removeVertex(findMeasurementEntity(ref.measurementId)!.shape, ref.vertexIndex).ok);
+  // PD-025 — nor may any of them turn inside out.
+  const participants = [{ shape, vertexIndex }, ...linked.map((ref) => ({ shape: findMeasurementEntity(ref.measurementId)!.shape, vertexIndex: ref.vertexIndex }))];
+  const results = participants.map((p) => ({ before: p.shape, result: removeVertex(p.shape, p.vertexIndex) }));
+  const allOk =
+    results.every(({ result }) => result.ok) &&
+    !linkedEditTurnsInsideOut(results.map(({ before, result }) => ({ before, after: result.ok ? result.value : before })));
   if (allOk) executeCommand((surface) => removeVertexCommand({ surface, measurementId, vertexIndex, linked: !detached }));
+}
+
+/** PD-025 — throws (freezing the preview, like any invalid candidate) when the linked preview
+ * would turn a participant inside out; the commands refuse the same at commit. */
+function assertNotInsideOut(shape: Shape, preview: Shape, linkedPreviews: readonly { measurementId: MeasurementId; previewShape: Shape }[]): void {
+  const pairs = [
+    { before: shape, after: preview },
+    ...linkedPreviews.map((linked) => ({ before: findMeasurementEntity(linked.measurementId)!.shape, after: linked.previewShape })),
+  ];
+  if (linkedEditTurnsInsideOut(pairs)) throw new Error('vertexEditSession: a linked part would turn inside out');
 }
 
 export function pointerMove(point: Point, modifiers: PointerModifiers): void {
@@ -344,6 +358,7 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
         ...linked,
         previewShape: editVertex(findMeasurementEntity(linked.measurementId)!.shape, linked.vertexIndex, snapped),
       }));
+      assertNotInsideOut(shape, preview, linkedPreviews);
       vertexDrag.set({ ...drag, lastValidPosition: snapped, previewShape: preview, linkedPreviews });
     } else if (drag.kind === 'edge') {
       const preview = addVertex(shape, drag.edgeIndex, snapped);
@@ -351,6 +366,7 @@ export function pointerMove(point: Point, modifiers: PointerModifiers): void {
         ...linked,
         previewShape: addVertex(findMeasurementEntity(linked.measurementId)!.shape, linked.edgeIndex, snapped),
       }));
+      assertNotInsideOut(shape, preview, linkedPreviews);
       vertexDrag.set({ ...drag, lastValidPosition: snapped, previewShape: preview, linkedPreviews });
     } else if (drag.kind === 'corner') {
       if (shape.type !== 'rectangle') return;
