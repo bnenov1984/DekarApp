@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
@@ -23,5 +24,13 @@ export default defineConfig({
   build: {
     outDir: '../../dist-ui',
     emptyOutDir: true,
+    // PD-026 / ADR-009: two HTML entries — the static landing page at the site root and the SPA
+    // under /app/. Vite's multi-page mode; the dev server serves both from the same tree.
+    rollupOptions: {
+      input: {
+        landing: fileURLToPath(new URL('./src/ui/index.html', import.meta.url)),
+        app: fileURLToPath(new URL('./src/ui/app/index.html', import.meta.url)),
+      },
+    },
   },
 });

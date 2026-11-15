@@ -1,12 +1,471 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AreaFlow</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/main.ts"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Dekar measures area, perimeter and distances from cadastral and floor plans in the browser. Calibrate once, trace the boundary, split a parcel and keep the total. Free as a guest.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 %3E %3Cpath d=%22M12 1.5 V5.4%22 stroke=%22%23111417%22 stroke-width=%221.4%22/%3E %3Crect x=%2210%22 y=%225.4%22 width=%224%22 height=%222.3%22 fill=%22%23111417%22/%3E %3Cpath d=%22M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z%22 fill=%22%23111417%22/%3E %3Cpath d=%22M3.5 21.4 H8.6 M15.4 21.4 H20.5%22 stroke=%22%23111417%22 stroke-width=%221.2%22/%3E %3Crect x=%2210.4%22 y=%2219.8%22 width=%223.2%22 height=%223.2%22 fill=%22%230B6E4F%22/%3E %3C/svg%3E">
+<!-- PD-026 / ADR-009: the public landing page, served at the site root. Static HTML on purpose —
+     no dependency on the SPA, which lives under /app/ (app/index.html). The design reference is
+     docs/mockups/landing_page_dekar.html; keep the two in step when the copy changes. -->
+<title>Dekar — area, perimeter and distance from plans</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Single-theme, drafting-paper white. Accent is the product's own green (docs/16_DESIGN_SYSTEM.md),
+     used only for primary actions and selection, as in the app. Everything else is linework. */
+  :root {
+    --paper: #FFFFFF;
+    --paper-2: #F7F8F9;
+    --line: #D7DBE0;
+    --line-strong: #9AA3AD;
+    --ink: #111417;
+    --ink-2: #5B636C;
+    --ink-3: #8B949E;
+    --accent: #0B6E4F;
+    --accent-ink: #FFFFFF;
+    --warning: #9A5B00;
+    --draw: #1F2328;
+    --hatch-a: #1565C0;
+    --hatch-b: #B4530A;
+    --grid-minor: #EEF0F2;
+    --grid-major: #DFE3E7;
+    --tint-g: rgba(11, 110, 79, .07);
+    --tint-g2: rgba(11, 110, 79, .035);
+    --tint-b: rgba(21, 101, 192, .055);
+    --tint-b2: rgba(21, 101, 192, .025);
+    --font-ui: 'Source Sans 3', 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: 'IBM Plex Mono', Consolas, 'Courier New', monospace;
+    --r: 2px;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.005em; text-wrap: balance; }
+  p { margin: 0; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .lab { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .wrap { width: min(1160px, calc(100% - 48px)); margin: 0 auto; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+    padding: 1px 6px; border: 1px solid var(--line-strong); color: var(--ink-2); background: var(--paper); border-radius: var(--r); line-height: 1.5;
+    white-space: nowrap; vertical-align: middle;
+  }
+  .tag.soon { border-color: var(--warning); color: var(--warning); }
+  .tag.tbd { border-style: dashed; }
+
+
+  /* Nav */
+  nav { border-bottom: 1px solid var(--line); background: var(--paper); position: sticky; top: 0; z-index: 10; }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 24px; }
+  .logo { display: flex; align-items: center; font-size: 19px; text-decoration: none; }
+  
+  .nav-links { display: flex; gap: 26px; font-size: 15px; color: var(--ink-2); }
+  .nav-links a { text-decoration: none; }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { display: flex; gap: 8px; align-items: center; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--r);
+    font: 600 14px/1 var(--font-ui); text-decoration: none; border: 1px solid var(--line-strong); cursor: pointer; white-space: nowrap;
+    background: var(--paper); color: var(--ink);
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn.primary { background: linear-gradient(180deg, #11805D 0%, var(--accent) 100%); border-color: #0A5F44; color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.lg { height: 44px; padding: 0 20px; font-size: 15.5px; }
+
+  /* Hero */
+  .hero { padding: 64px 0 64px;
+    background:
+      radial-gradient(70% 60% at 85% 0%, var(--tint-b) 0%, transparent 65%),
+      radial-gradient(60% 55% at 0% 30%, var(--tint-g) 0%, transparent 60%),
+      linear-gradient(180deg, #F6FAF8 0%, var(--paper) 78%);
+  }
+  .hero .wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: start; }
+  .hero-copy { padding-top: 8px; }
+  .hero h1 { font-size: clamp(34px, 4.2vw, 50px); line-height: 1.08; margin: 14px 0 20px; }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 32em; }
+  .hero-ctas { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+  .hero-note { margin-top: 14px; font-size: 13px; color: var(--ink-3); }
+  .hero-facts { margin-top: 40px; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); }
+  .fact { padding: 14px 16px 0 0; border-right: 1px solid var(--line); margin-right: 16px; }
+  .fact:last-child { border-right: 0; margin-right: 0; }
+  .fact .v { font-size: 20px; font-weight: 600; color: var(--ink); line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .fact .k { font-size: 13.5px; color: var(--ink-2); margin-top: 4px; }
+
+  /* Drawing sheet */
+  .sheet { border: 1px solid var(--line-strong); background: linear-gradient(135deg, var(--paper) 0%, #F7FAFC 100%); }
+  .sheet-frame { border: 1px solid var(--line-strong); margin: 10px; }
+  .sheet svg {
+    display: block; width: 100%; height: auto;
+    background-color: var(--paper);
+    background-image:
+      linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+      linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+    background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+  }
+  .tblock { display: grid; grid-template-columns: 1.7fr .8fr 1fr 1.5fr .8fr; border-top: 1px solid var(--line-strong); background: linear-gradient(90deg, var(--tint-g2) 0%, transparent 55%); }
+  .tblock > div { padding: 8px 10px; border-right: 1px solid var(--line); min-width: 0; }
+  .tblock > div:last-child { border-right: 0; }
+  .tblock .lab { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 400; color: var(--ink-3); }
+  .tblock .mono { font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
+
+  /* Sections as sheet rows */
+  section { padding: 56px 0 64px; border-top: 1px solid var(--line); }
+  #spec { background: linear-gradient(180deg, var(--paper) 0%, #F8FAFB 100%); }
+  .sec { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; }
+  .sec-id { position: sticky; top: 76px; align-self: start; }
+  .sec-id .lab { display: block; margin-bottom: 10px; }
+  .sec-id h2 { font-size: 27px; line-height: 1.15; }
+  .sec-id p { color: var(--ink-2); margin-top: 12px; font-size: 15.5px; }
+
+  /* Steps: a real sequence */
+  .steps { border-top: 1px solid var(--line-strong); }
+  .step { display: grid; grid-template-columns: 56px minmax(0, 1fr) minmax(0, 300px); gap: 24px; padding: 22px 0; border-bottom: 1px solid var(--line); align-items: start; }
+  .step .n { font-size: 14px; font-weight: 600; color: var(--ink-3); padding-top: 4px; font-variant-numeric: tabular-nums; }
+  .step h3 { font-size: 19px; }
+  .step p { color: var(--ink-2); margin-top: 6px; }
+  .step .ex { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--ink); background: linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+  .step .ex span { color: var(--ink-3); }
+
+  /* Spec table */
+  .spec { border-top: 1px solid var(--line-strong); }
+  .row { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .row h3 { font-size: 17px; font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row p { color: var(--ink-2); }
+  .row .ref { font-size: 13px; color: var(--ink-3); margin-top: 6px; display: block; }
+
+  /* Plans as a comparison table */
+  .plans { width: 100%; border-collapse: collapse; border-top: 1px solid var(--line-strong); font-size: 15.5px; }
+  .plans th, .plans td { text-align: left; padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .plans th { font-weight: 600; }
+  .plans thead th { padding-top: 18px; padding-bottom: 18px; }
+  .plans thead .lab { display: block; margin-bottom: 6px; }
+  .plans .price { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .plans .price small { font: 400 13px/1 var(--font-ui); color: var(--ink-2); margin-left: 6px; }
+  .plans td.k { color: var(--ink-2); width: 240px; }
+  .plans .yes::before { content: "•"; color: var(--accent); margin-right: 8px; }
+  .plans .no { color: var(--ink-3); }
+  .plans .no::before { content: "–"; margin-right: 8px; }
+  .plans tfoot td { border-bottom: 0; padding-top: 20px; }
+  .plans th:nth-child(3), .plans td:nth-child(3) { background: linear-gradient(90deg, var(--tint-g2) 0%, transparent 100%); padding-left: 16px; }
+  .plans thead th:nth-child(3) { background: linear-gradient(180deg, var(--tint-g) 0%, var(--tint-g2) 100%); border-top: 2px solid var(--accent); }
+  .plans-scroll { overflow-x: auto; }
+
+  /* Final CTA */
+  .cta-band { border-top: 1px solid var(--line-strong); background: linear-gradient(100deg, var(--tint-g) 0%, var(--paper-2) 55%, var(--tint-b) 100%); }
+  .cta-band .wrap { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; padding: 40px 0; }
+  .cta-band h2 { font-size: 24px; }
+  .cta-band p { color: var(--ink-2); margin-top: 4px; }
+
+  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; font-size: 14px; color: var(--ink-3); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .foot-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
+  .foot-brand .mark { width: 16px; height: 16px; }
+  footer a { text-decoration: none; color: var(--ink-2); margin-left: 18px; }
+
+
+  /* Wordmark: mark + name */
+  .wm { display: inline-flex; align-items: center; gap: .42em; font-weight: 700; letter-spacing: -0.01em; line-height: 1; }
+  .wm .mark { height: 1.15em; width: 1.15em; flex: none; }
+
+
+  @media (max-width: 920px) {
+    .hero .wrap { grid-template-columns: 1fr; }
+    .sec { grid-template-columns: 1fr; gap: 24px; }
+    .sec-id { position: static; }
+    .step { grid-template-columns: 40px 1fr; }
+    .step .ex { grid-column: 2; }
+    .row { grid-template-columns: 1fr; gap: 6px; }
+    .nav-links { display: none; }
+    .tblock { grid-template-columns: 1fr 1fr 1fr; }
+    .tblock > div:first-child { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
+    .hero-facts { grid-template-columns: 1fr; }
+    .fact { border-right: 0; margin-right: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="Dekar home"><span class="wm" aria-label="Dekar"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5 V5.4" stroke="currentColor" stroke-width="1.4"/><rect x="10" y="5.4" width="4" height="2.3" fill="currentColor"/><path d="M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z" fill="currentColor"/><path d="M3.5 21.4 H8.6 M15.4 21.4 H20.5" stroke="currentColor" stroke-width="1.2"/><rect x="10.4" y="19.8" width="3.2" height="3.2" fill="var(--accent)"/></svg><span>Dekar</span></span></a>
+    <div class="nav-links">
+      <a href="#how">Method</a>
+      <a href="#spec">Capabilities</a>
+      <a href="#plans">Plans</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn" href="/app/">Sign in</a>
+      <a class="btn primary" href="/app/">Open Dekar</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="hero-copy">
+      <span class="lab">Dekar · area, perimeter and distance from plans</span>
+      <h1>Measurement from drawings, without the CAD workflow.</h1>
+      <p class="lede">Import a cadastral or floor plan, calibrate it against one known dimension, and trace the boundary. Dekar returns area, perimeter and lengths that follow from the scale you declared, and says so on the report.</p>
+      <div class="hero-ctas">
+        <a class="btn primary lg" href="/app/">Start measuring</a>
+        <a class="btn lg" href="#how">Read the method</a>
+      </div>
+      <p class="hero-note">Runs in the browser on a desktop. Free to use as a guest, no account required.</p>
+
+      <div class="hero-facts">
+        <div class="fact"><div class="v">1 : 500</div><div class="k">Scale declared per sheet, not per shape</div></div>
+        <div class="fact"><div class="v">Σ = parent</div><div class="k">Split parts always sum to the whole</div></div>
+        <div class="fact"><div class="v">1 000 m²</div><div class="k">One decare, the unit the name comes from</div></div>
+      </div>
+    </div>
+
+    <figure class="sheet" aria-label="Drawing sheet: parcel 1174 measured in Dekar and split into two parts">
+      <div class="sheet-frame">
+        <svg viewBox="0 0 640 420" role="img" aria-hidden="true">
+          <defs>
+            <pattern id="hA" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="8" stroke="var(--hatch-a)" stroke-width=".8" opacity=".55"/>
+            </pattern>
+            <pattern id="hB" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+              <line x1="0" y1="0" x2="0" y2="8" stroke="var(--hatch-b)" stroke-width=".8" opacity=".55"/>
+            </pattern>
+            <marker id="tick" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M1 5L5 1" stroke="var(--draw)" stroke-width="1"/>
+            </marker>
+            <style>
+              .d { font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 10.5px; fill: #111417; font-variant-numeric: tabular-nums; }
+              .d2 { font-family: 'Source Sans 3', 'Segoe UI', Arial, sans-serif; font-size: 10px; font-weight: 600; fill: #5B636C; letter-spacing: .04em; }
+              .lw { stroke: #1F2328; fill: none; }
+              .dim { stroke: #1F2328; stroke-width: .7; fill: none; }
+              .ext { stroke: #9AA3AD; stroke-width: .6; fill: none; }
+            </style>
+          </defs>
+
+          <!-- context linework: road edges and neighbouring parcel -->
+          <path d="M0 356 L640 318" class="lw" stroke-width=".7" stroke-dasharray="10 4 2 4"/>
+          <path d="M0 380 L640 342" class="lw" stroke-width=".7" stroke-dasharray="10 4 2 4"/>
+          <text x="20" y="372" class="d2" transform="rotate(-3.4 20 372)">ROAD · UL. IZGREV</text>
+          <path d="M566 40 L632 36 L632 236 L588 242 Z" class="lw" stroke-width=".7"/>
+          <text x="604" y="142" class="d2" text-anchor="middle">1175</text>
+
+          <!-- parent boundary (stays visible under its parts) -->
+          <path d="M90 78 L446 60 L498 292 L160 342 Z" class="lw" stroke-width="1.6"/>
+
+          <!-- parts with CAD hatching -->
+          <path d="M90 78 L276 68.6 L306 304 L160 342 Z" fill="url(#hA)" stroke="var(--hatch-a)" stroke-width="1.1"/>
+          <path d="M276 68.6 L446 60 L498 292 L306 304 Z" fill="url(#hB)" stroke="var(--hatch-b)" stroke-width="1.1"/>
+          <!-- split line -->
+          <path d="M276 68.6 L306 304" stroke="var(--accent)" stroke-width="1.6"/>
+
+          <!-- vertices: squares, CAD style; shared (linked) ones filled in accent -->
+          <g fill="#FFFFFF" stroke="#1F2328" stroke-width="1">
+            <rect x="86" y="74" width="8" height="8"/><rect x="442" y="56" width="8" height="8"/>
+            <rect x="494" y="288" width="8" height="8"/><rect x="156" y="338" width="8" height="8"/>
+          </g>
+          <g fill="var(--accent)" stroke="#FFFFFF" stroke-width="1">
+            <rect x="271" y="63.6" width="10" height="10"/><rect x="301" y="299" width="10" height="10"/>
+          </g>
+
+          <!-- dimension: top edge (the calibration reference) -->
+          <path d="M90 78 L90 34 M446 60 L446 16" class="ext"/>
+          <path d="M90 40 L446 22" class="dim" marker-start="url(#tick)" marker-end="url(#tick)"/>
+          <text x="268" y="26" class="d" text-anchor="middle" transform="rotate(-2.9 268 26)">24.00 · REF</text>
+
+          <!-- dimension: left edge -->
+          <path d="M90 78 L46 78 M160 342 L116 342" class="ext"/>
+          <path d="M52 78 L122 342" class="dim" marker-start="url(#tick)" marker-end="url(#tick)"/>
+          <text x="74" y="214" class="d" text-anchor="middle" transform="rotate(75 74 214)">18.42</text>
+
+          <!-- dimension: right edge -->
+          <path d="M446 60 L492 48 M498 292 L544 280" class="ext"/>
+          <path d="M486 50 L538 282" class="dim" marker-start="url(#tick)" marker-end="url(#tick)"/>
+          <text x="524" y="166" class="d" text-anchor="middle" transform="rotate(77 524 166)">16.05</text>
+
+          <!-- area annotations -->
+          <text x="184" y="196" class="d" text-anchor="middle" style="font-size:11px">A</text>
+          <text x="184" y="212" class="d" text-anchor="middle">612.40 m²</text>
+          <text x="392" y="176" class="d" text-anchor="middle" style="font-size:11px">B</text>
+          <text x="392" y="192" class="d" text-anchor="middle">627.60 m²</text>
+
+          <!-- parcel label on the split line -->
+          <rect x="228" y="150" width="140" height="16" fill="#FFFFFF" stroke="#1F2328" stroke-width=".7"/>
+          <text x="298" y="161.5" class="d" text-anchor="middle">Σ 1174 · 1 240.00 m²</text>
+
+          <!-- crosshair cursor with snap marker on the shared vertex -->
+          <g stroke="#1F2328" stroke-width=".7">
+            <line x1="306" y1="272" x2="306" y2="292"/><line x1="306" y1="316" x2="306" y2="336"/>
+            <line x1="274" y1="304" x2="294" y2="304"/><line x1="318" y1="304" x2="338" y2="304"/>
+          </g>
+          <rect x="156" y="306" width="132" height="14" fill="#FFFFFF" stroke="#0B6E4F" stroke-width=".7"/>
+          <text x="222" y="316.2" class="d2" text-anchor="middle" style="fill:#0B6E4F">SNAP · VERTEX · LINKED</text>
+
+          <!-- north arrow -->
+          <g transform="translate(600 364)">
+            <path d="M0 -14 L5 6 L0 2 L-5 6 Z" fill="#1F2328"/>
+            <text x="0" y="20" class="d2" text-anchor="middle">N</text>
+          </g>
+
+          <!-- scale bar -->
+          <g transform="translate(28 398)">
+            <rect x="0" y="-5" width="40" height="5" fill="#1F2328"/>
+            <rect x="40" y="-5" width="40" height="5" fill="#FFFFFF" stroke="#1F2328" stroke-width=".7"/>
+            <rect x="80" y="-5" width="40" height="5" fill="#1F2328"/>
+            <text x="0" y="12" class="d2">0</text>
+            <text x="60" y="12" class="d2" text-anchor="middle">10</text>
+            <text x="120" y="12" class="d2" text-anchor="end">20 m</text>
+          </g>
+        </svg>
+        <div class="tblock" aria-label="Title block">
+          <div><span class="lab">Project</span><span class="mono">Parcel 1174 · Sheet 3 of 3</span></div>
+          <div><span class="lab">Scale</span><span class="mono">1 : 500</span></div>
+          <div><span class="lab">Calibrated on</span><span class="mono">24.00 m</span></div>
+          <div><span class="lab">Σ Area</span><span class="mono">1 240.00 m² · 1.24 dka</span></div>
+          <div><span class="lab">Status</span><span class="mono">Saved ✓</span></div>
+        </div>
+      </div>
+    </figure>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap sec">
+    <div class="sec-id">
+      <span class="lab">Method</span>
+      <h2>Nothing is a number until the sheet has a scale.</h2>
+      <p>The order is fixed on purpose. Dekar keeps the scale declaration visible instead of burying it in a settings dialog.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="n">01</span>
+        <div>
+          <h3>Import the sheet</h3>
+          <p>Drop a PNG or JPG of the plan onto the page, or start on a blank canvas. PDF pages and map views follow the same path.</p>
+        </div>
+        <div class="ex">plan_1174.jpg<br><span>4960 × 3508 px · 300 dpi</span></div>
+      </div>
+      <div class="step">
+        <span class="n">02</span>
+        <div>
+          <h3>Calibrate against one known dimension</h3>
+          <p>Click both ends of a length you trust and type its value. Every area, perimeter and distance on the sheet now derives from that one declaration. Change it, and all of them update together.</p>
+        </div>
+        <div class="ex">REF 24.00 m = 576 px<br><span>1 px = 0.0417 m · scale 1 : 500</span></div>
+      </div>
+      <div class="step">
+        <span class="n">03</span>
+        <div>
+          <h3>Trace, split, read</h3>
+          <p>Trace the boundary. Divide it into lots with one line. Move a shared corner and both neighbours follow in a single undoable step. Figures update as you draw.</p>
+        </div>
+        <div class="ex">A 612.40 + B 627.60 = Σ 1 240.00 m²<br><span>perimeter 148.6 m · 2 parts</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="spec">
+  <div class="wrap sec">
+    <div class="sec-id">
+      <span class="lab">Capabilities</span>
+      <h2>Built for people who answer for the figure.</h2>
+      <p>Brokers, surveyors and developers measuring from plans at a desk. No CAD training assumed; CAD-grade rules kept.</p>
+    </div>
+    <div class="spec">
+      <div class="row">
+        <h3>Scale per sheet</h3>
+        <div><p>Scale is a property of the drawing, not of each shape. Recalibration is atomic: all measurements on the sheet change together or not at all.</p><span class="ref">INV-3 · Measurement Engine</span></div>
+      </div>
+      <div class="row">
+        <h3>Split with conserved total</h3>
+        <div><p>One line divides a parcel into parts that cover the whole without gaps or overlap. Their areas sum to the parent, and keep summing after you move a corner.</p><span class="ref">PD-009 · PD-021</span></div>
+      </div>
+      <div class="row">
+        <h3>Linked vertices</h3>
+        <div><p>Touching lots share their boundary. Dragging the common vertex moves both; Ctrl-drag detaches one. An edit that would fold a part inside out is refused.</p><span class="ref">PD-024 · PD-025</span></div>
+      </div>
+      <div class="row">
+        <h3>Registered area</h3>
+        <div><p>Enter the official area from the deed. Geometry stays as drawn, the parts share the registered total, and the report shows which figure is which.</p><span class="ref">PD-021</span></div>
+      </div>
+      <div class="row">
+        <h3>Reports with a scale declaration <span class="tag soon">soon</span></h3>
+        <div><p>Every exported report states what it was calibrated on and the precision the source allows. CSV export is available today.</p><span class="ref">PD-015</span></div>
+      </div>
+      <div class="row">
+        <h3>Projects on every computer <span class="tag soon">soon</span></h3>
+        <div><p>Signed in, your projects and the plans behind them open on the office PC and the laptop at home. Today a project is saved to the account by hand.</p><span class="ref">PD-023</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="plans">
+  <div class="wrap sec">
+    <div class="sec-id">
+      <span class="lab">Plans</span>
+      <h2>Measure as a guest. Keep it with an account.</h2>
+      <p>An account is not required to measure. It is where your work stops being tied to one browser on one machine.</p>
+    </div>
+    <div class="plans-scroll">
+      <table class="plans">
+        <thead>
+          <tr>
+            <th></th>
+            <th><span class="lab">Guest</span><span class="price">Free</span></th>
+            <th><span class="lab">Account</span><span class="price">€ <span class="tag tbd">TBD</span><small>per month · P-02</small></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">Import, calibrate, draw, split</td><td class="yes">Full product</td><td class="yes">Full product</td></tr>
+          <tr><td class="k">Projects</td><td class="yes">One, stored in this browser only</td><td class="yes">Limit per plan <span class="tag tbd">TBD</span></td></tr>
+          <tr><td class="k">Uploaded plans</td><td class="yes">Kept on this device</td><td class="yes">Stored in the account, EU-hosted</td></tr>
+          <tr><td class="k">Open on another computer</td><td class="no">Not available</td><td class="yes">Yes <span class="tag soon">soon</span></td></tr>
+          <tr><td class="k">Export</td><td class="yes">CSV</td><td class="yes">CSV; full archive incl. plans <span class="tag soon">soon</span></td></tr>
+          <tr><td class="k">Moving to an account</td><td class="yes">Guest project transfers on sign-up</td><td class="yes">Delete the account at any time</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td></td><td><a class="btn" href="/app/">Open Dekar</a></td><td><a class="btn primary" href="/app/">Create an account</a></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="cta-band">
+  <div class="wrap">
+    <div>
+      <h2>Open a plan and measure it now.</h2>
+      <p>Free as a guest. In the browser. Nothing to install.</p>
+    </div>
+    <a class="btn primary lg" href="/app/">Start measuring</a>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span class="foot-brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5 V5.4" stroke="currentColor" stroke-width="1.4"/><rect x="10" y="5.4" width="4" height="2.3" fill="currentColor"/><path d="M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z" fill="currentColor"/><path d="M3.5 21.4 H8.6 M15.4 21.4 H20.5" stroke="currentColor" stroke-width="1.2"/><rect x="10.4" y="19.8" width="3.2" height="3.2" fill="var(--accent)"/></svg> © 2026 Dekar</span>
+    <span>
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Contact</a>
+    </span>
+  </div>
+</footer>
+
+
+</body>
 </html>
