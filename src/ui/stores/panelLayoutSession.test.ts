@@ -5,6 +5,8 @@ import {
   DEFAULT_PROPERTIES_SHARE,
   MIN_PROPERTIES_SHARE,
   MAX_PROPERTIES_SHARE,
+  MIN_PROPERTIES_PX,
+  AUTO_MAX_PROPERTIES_SHARE,
   setPropertiesShare,
   nudgePropertiesShare,
   resetPropertiesShare,
@@ -20,8 +22,10 @@ import {
   closeRightOverlay,
 } from './panelLayoutSession.js';
 
-// 15 §2.2 (Photoshop layout, 2026-10-11) — the right column's divider between Properties (top)
-// and Layers (below). The share is the fraction of the column's height Properties takes.
+// 15 §2.2 (Photoshop layout, 2026-10-11; auto height, 2026-11-15) — the right column's divider
+// between Properties (top) and Layers (below). `null` means Properties takes the height of its
+// content (at least MIN_PROPERTIES_PX, at most AUTO_MAX_PROPERTIES_SHARE of the column); a number
+// is the user's override — the fraction of the column Properties takes.
 
 beforeEach(() => {
   resetPropertiesShare();
@@ -31,11 +35,17 @@ beforeEach(() => {
 });
 
 describe('panelLayoutSession — Properties/Layers divider', () => {
-  it('starts at the default share', () => {
-    expect(get(propertiesShare)).toBe(DEFAULT_PROPERTIES_SHARE);
+  it('starts automatic: Properties sized to its content', () => {
+    expect(get(propertiesShare)).toBeNull();
   });
 
-  it('setPropertiesShare stores a share inside the limits', () => {
+  it('bounds the automatic height so neither section disappears', () => {
+    expect(MIN_PROPERTIES_PX).toBeGreaterThan(0);
+    expect(AUTO_MAX_PROPERTIES_SHARE).toBeGreaterThan(MIN_PROPERTIES_SHARE);
+    expect(AUTO_MAX_PROPERTIES_SHARE).toBeLessThanOrEqual(MAX_PROPERTIES_SHARE);
+  });
+
+  it('setPropertiesShare switches to an override inside the limits', () => {
     setPropertiesShare(0.35);
     expect(get(propertiesShare)).toBe(0.35);
   });
@@ -53,7 +63,7 @@ describe('panelLayoutSession — Properties/Layers divider', () => {
     expect(get(propertiesShare)).toBe(0.4);
   });
 
-  it('nudgePropertiesShare moves the divider by a step, still clamped (keyboard ↑/↓)', () => {
+  it('nudgePropertiesShare moves an override by a step, still clamped (keyboard ↑/↓)', () => {
     setPropertiesShare(0.5);
     nudgePropertiesShare(0.05);
     expect(get(propertiesShare)).toBeCloseTo(0.55);
@@ -61,10 +71,20 @@ describe('panelLayoutSession — Properties/Layers divider', () => {
     expect(get(propertiesShare)).toBe(MIN_PROPERTIES_SHARE);
   });
 
-  it('resetPropertiesShare returns to the default (double-click on the divider)', () => {
+  it('nudgePropertiesShare from automatic starts at the measured share the column reports', () => {
+    nudgePropertiesShare(0.05, 0.3);
+    expect(get(propertiesShare)).toBeCloseTo(0.35);
+  });
+
+  it('nudgePropertiesShare from automatic without a measurement starts at the default share', () => {
+    nudgePropertiesShare(0.1);
+    expect(get(propertiesShare)).toBeCloseTo(DEFAULT_PROPERTIES_SHARE + 0.1);
+  });
+
+  it('resetPropertiesShare returns to automatic (double-click on the divider)', () => {
     setPropertiesShare(0.3);
     resetPropertiesShare();
-    expect(get(propertiesShare)).toBe(DEFAULT_PROPERTIES_SHARE);
+    expect(get(propertiesShare)).toBeNull();
   });
 });
 
@@ -78,7 +98,7 @@ describe('shareFromPointer', () => {
     expect(shareFromPointer(2000, 100, 800)).toBe(MAX_PROPERTIES_SHARE);
   });
 
-  it('falls back to the default for a column with no height yet', () => {
+  it('falls back to the default share for a column with no height yet', () => {
     expect(shareFromPointer(300, 100, 0)).toBe(DEFAULT_PROPERTIES_SHARE);
   });
 });

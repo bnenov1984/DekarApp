@@ -25,13 +25,10 @@
     splittingId,
     startSplit,
     splitConfigOpen,
-    splitPartsCount,
-    splitDistribution,
-    splitPartsError,
     openSplitConfig,
     closeSplitConfig,
-    confirmSplitParts,
   } from '../stores/splitSession.js';
+  import SplitPopover from './SplitPopover.svelte';
   import { activeVertexLabel, clearActiveVertexLabel } from '../stores/vertexLabelSession.js';
   import Icon from './Icon.svelte';
   import { viewOnly } from '../stores/panelLayoutSession.js';
@@ -314,6 +311,8 @@
   // PO request ("Redesign and fix Split functionality") — the Split button now opens the inline
   // Equal/Random config UI directly under it, instead of arming the old unlabeled line-draw mode
   // straight away (that flow is retained, explicitly labeled "Manual split", one step further in).
+  let splitButton: HTMLButtonElement;
+
   function onSplitClick(): void {
     if (!measurement) return;
     if ($splitConfigOpen === measurement.id) {
@@ -515,6 +514,7 @@
         type="button"
         class="secondary-button"
         class:active={splitConfigOpenForThis}
+        bind:this={splitButton}
         title="Split into parts (X)"
         aria-expanded={splitConfigOpenForThis}
         disabled={!canSplitSelected && !splitConfigOpenForThis}
@@ -525,72 +525,12 @@
         Split
       </button>
     {#if splitConfigOpenForThis}
-      <!-- PO request ("Redesign and fix Split functionality") — replaces the old unlabeled
-           line-draw-on-canvas default: pick a part count + distribution here, one click computes
-           everything (core/drawing/splitParts.ts), no canvas interaction needed. The previous
-           line-draw flow is retained one step further down as an explicitly labeled "Manual split"
-           fallback, not deleted. -->
-      <section class="section split-config" data-testid="split-config">
-        <label class="notes-label" for="split-parts-count">Number of parts</label>
-        <div class="split-count-row">
-          {#each [2, 3, 4] as n (n)}
-            <button
-              type="button"
-              class="split-count-preset"
-              class:active={$splitPartsCount === n}
-              on:click={() => splitPartsCount.set(n)}
-              data-testid="split-count-{n}"
-            >
-              {n}
-            </button>
-          {/each}
-          <input
-            id="split-parts-count"
-            type="number"
-            min="2"
-            max="24"
-            step="1"
-            class="split-count-input"
-            value={$splitPartsCount}
-            on:input={(e) => splitPartsCount.set(Math.max(2, Math.min(24, Number(e.currentTarget.value) || 2)))}
-            aria-label="Custom number of parts"
-            data-testid="split-count-custom"
-          />
-        </div>
-
-        <span class="notes-label">Distribution</span>
-        <div class="split-distribution-row" role="group" aria-label="Distribution">
-          <button
-            type="button"
-            class="split-distribution-option"
-            class:active={$splitDistribution === 'equal'}
-            on:click={() => splitDistribution.set('equal')}
-            data-testid="split-distribution-equal"
-          >
-            Equal
-          </button>
-          <button
-            type="button"
-            class="split-distribution-option"
-            class:active={$splitDistribution === 'random'}
-            on:click={() => splitDistribution.set('random')}
-            data-testid="split-distribution-random"
-          >
-            Random
-          </button>
-        </div>
-
-        {#if $splitPartsError}
-          <p class="split-error" data-testid="split-error">{$splitPartsError}</p>
-        {/if}
-
-        <button type="button" class="split-confirm-button" on:click={confirmSplitParts} data-testid="split-confirm">
-          Split polygon
-        </button>
-        <button type="button" class="manual-split-link" on:click={onManualSplitClick} data-testid="manual-split-link">
-          Manual split (draw a line)
-        </button>
-      </section>
+      <!-- .scratch/properties-panel spec, decision 3 (PO, 2026-11-15) — the parts form opens
+           beside the panel as a popover (SplitPopover.svelte) instead of inline, so it never
+           competes with Notes and Delete for the panel's height. The config itself (count,
+           distribution, error, confirm) is unchanged and still lives in splitSession.ts; the
+           line-draw "Manual split" fallback is still offered inside it. -->
+      <SplitPopover anchor={splitButton} onManualSplit={onManualSplitClick} />
     {/if}
     </section>
   {/if}
@@ -780,15 +720,13 @@
     background: color-mix(in srgb, var(--af-accent) 10%, transparent);
   }
 
-  /* "Delete shape" — full width, low emphasis, at the bottom of the panel (16 §3.2). Sticky, so
-     it stays in view when the sections above scroll in a short Properties section. Red only on
-     hover, so a destructive action never shouts from a panel the user reads constantly. */
+  /* "Delete shape" — full width, low emphasis, last in the panel (16 §3.2). In the flow, not
+     pinned: Properties now takes the height of its content (RightColumn.svelte), so the button is
+     in view on a normal selection, and a pinned button used to float over whatever scrolled under
+     it. Red only on hover, so a destructive action never shouts from a panel the user reads
+     constantly. */
   .delete-button {
     margin-top: auto;
-    position: sticky;
-    bottom: 0;
-    /* Masks content scrolling past it, including the panel's 10px bottom padding below it. */
-    box-shadow: 0 0 0 4px var(--af-surface-panel), 0 10px 0 4px var(--af-surface-panel);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -822,8 +760,6 @@
     cursor: not-allowed;
   }
 
-  /* Not opacity: the sticky button's own background masks the content scrolling under it, and a
-     translucent button would let that content show through. */
   .delete-button:disabled {
     color: color-mix(in srgb, var(--af-ink-tertiary) 45%, var(--af-surface-panel));
     cursor: not-allowed;
@@ -855,87 +791,6 @@
     margin: 0;
     font-size: 12.5px;
     color: var(--af-ink-tertiary);
-  }
-
-  .split-config {
-    background: var(--af-surface-app);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
-    padding: 10px;
-  }
-
-  .split-count-row {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-  }
-
-  .split-count-preset,
-  .split-distribution-option {
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--af-ink-secondary);
-    background: var(--af-surface-panel);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
-    padding: 5px 10px;
-    cursor: pointer;
-  }
-
-  .split-count-preset.active,
-  .split-distribution-option.active {
-    color: var(--af-accent-ink);
-    background: var(--af-accent);
-    border-color: var(--af-accent);
-  }
-
-  .split-count-input {
-    width: 48px;
-    font: inherit;
-    font-size: 12.5px;
-    font-variant-numeric: tabular-nums;
-    color: var(--af-ink-primary);
-    background: var(--af-surface-panel);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
-    padding: 5px 6px;
-    text-align: right;
-  }
-
-  .split-distribution-row {
-    display: flex;
-    gap: 4px;
-  }
-
-  .split-error {
-    margin: 0;
-    font-size: 11.5px;
-    color: var(--af-danger);
-  }
-
-  .split-confirm-button {
-    font: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--af-accent-ink);
-    background: var(--af-accent);
-    border: none;
-    border-radius: var(--af-radius-sm);
-    padding: 7px 10px;
-    cursor: pointer;
-  }
-
-  .manual-split-link {
-    font: inherit;
-    font-size: 11.5px;
-    color: var(--af-ink-tertiary);
-    background: none;
-    border: none;
-    padding: 2px;
-    text-align: left;
-    text-decoration: underline;
-    cursor: pointer;
   }
 
   .manual-area-clear {
