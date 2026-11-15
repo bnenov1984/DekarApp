@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 80" width="600" height="160">
+  <!-- Dekar wordmark: mark + name. Text set in Source Sans 3 Bold; outline before production use. -->
+  <style>@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@700&amp;display=swap'); text{font-family:'Source Sans 3','Segoe UI',Arial,sans-serif;font-weight:700;font-size:64px;letter-spacing:-0.6px;fill:#111417}</style>
+  <g transform="translate(16 8) scale(2.7)">
+    <path d="M12 1.5 V5.4" stroke="#111417" stroke-width="1.4"/>
+    <rect x="10" y="5.4" width="4" height="2.3" fill="#111417"/>
+    <path d="M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z" fill="#111417"/>
+    <path d="M3.5 21.4 H8.6 M15.4 21.4 H20.5" stroke="#111417" stroke-width="1.2"/>
+    <rect x="10.4" y="19.8" width="3.2" height="3.2" fill="#0B6E4F"/>
+  </g>
+  <text x="98" y="62">Dekar</text>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="240" height="240">
+  <!-- Dekar mark, option B: triangulation-station symbol on a baseline. Station dot in the product green. -->
+  <path d="M12 4.2 L21 20 H3 Z" fill="none" stroke="#111417" stroke-width="2" stroke-linejoin="miter"/>
+  <path d="M1 20 H23" stroke="#111417" stroke-width="2"/>
+  <circle cx="12" cy="14.8" r="2.4" fill="#0B6E4F"/>
+</svg>

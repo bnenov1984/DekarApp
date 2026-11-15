@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="240" height="240">
+  <!-- Dekar mark: plumb bob centred over the ground mark. Point in the product green. -->
+  <path d="M12 1.5 V5.4" stroke="#111417" stroke-width="1.4"/>
+  <rect x="10" y="5.4" width="4" height="2.3" fill="#111417"/>
+  <path d="M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z" fill="#111417"/>
+  <path d="M3.5 21.4 H8.6 M15.4 21.4 H20.5" stroke="#111417" stroke-width="1.2"/>
+  <rect x="10.4" y="19.8" width="3.2" height="3.2" fill="#0B6E4F"/>
+</svg>
