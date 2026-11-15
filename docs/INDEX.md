@@ -17,7 +17,7 @@ you need to justify a judgment call.
 something is an already-settled decision, an explicitly parked idea, or genuinely undecided.
 
 - **Authoritative:** [PRODUCT_BIBLE.md](PRODUCT_BIBLE.md) (frozen concept/principles/guardrails),
-  [05_PRODUCT_DECISIONS.md](05_PRODUCT_DECISIONS.md) (PD-001…024 — the living, append-only "what"
+  [05_PRODUCT_DECISIONS.md](05_PRODUCT_DECISIONS.md) (PD-001…026 — the living, append-only "what"
   log; check here first for whether your task is already decided, PARKED, or open).
 - **Supporting:** [08_PERSONAS.md](08_PERSONAS.md), [09_USER_JOURNEYS.md](09_USER_JOURNEYS.md),
   [10_USER_STORIES.md](10_USER_STORIES.md) — who the decision serves and why, for tie-breaking
@@ -96,7 +96,8 @@ adding an API surface, or anything that shifts which module owns what.
   interface is owned by the layer that defines it, not the one that calls it), the relevant
   [26_ADR/ADR-*.md](26_ADR/) for the specific decision already made (persistence → ADR-004; sync
   conflicts → ADR-005; rendering → ADR-002; extension isolation → ADR-003; undo → ADR-001; UI
-  framework → ADR-006; backend hosting/framework → ADR-007; frontend hosting → ADR-008).
+  framework → ADR-006; backend hosting/framework → ADR-007; frontend hosting → ADR-008;
+  public landing page at the root and the app under `/app/` → ADR-009).
 - **Supporting:** [14_DOMAIN_MODEL.md](14_DOMAIN_MODEL.md) §2 (aggregate boundaries, which drive
   persistence transaction boundaries).
 - **Consult if relevant:** [22_TDD.md](22_TDD.md) §2 (contract-test pattern — a fake and a real

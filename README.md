@@ -14,7 +14,7 @@ Requires Node 24.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5174/
+npm run dev        # http://localhost:5174/ (public page) · http://localhost:5174/app/ (the app)
 ```
 
 The account features need `areaflow-api` running on `http://localhost:8787` (override with
@@ -34,7 +34,9 @@ CI (`.github/workflows/ci.yml`) runs lint, both type checks, tests and the build
 ## Deployment
 
 The app is hosted as a Render static site, configured in [`render.yaml`](render.yaml)
-(ADR-008). Every push to `main` deploys automatically once CI passes. The live site works fully
+(ADR-008). The site root is the public landing page (static HTML, `src/ui/index.html`); the
+application itself is served from `/app/` (`src/ui/app/index.html`) — PD-026, ADR-009. Every push to
+`main` deploys automatically once CI passes. The live site works fully
 without the backend; sign-in and "Save to account" need `areaflow-api` deployed as well.
 
 ## Code layout
