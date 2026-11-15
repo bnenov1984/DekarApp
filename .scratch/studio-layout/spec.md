@@ -46,3 +46,7 @@ The UI has no component-test harness (vitest covers `src/**/*.test.ts`, stores o
 layout changes are verified in Chrome via a playwright-core driver: screenshots plus
 bounding-box assertions (no overlaps, expected order). Logic that moves into a store (e.g. the
 Tab toggle, the panel divider position) gets store tests first.
+
+## Comments
+
+**2026-11-15.** Decisions 4 and 6 refined by `.scratch/properties-panel/spec.md`: Properties takes the height of its content (the divider is an override), the Split form opens as a popover, and Delete is no longer pinned.
