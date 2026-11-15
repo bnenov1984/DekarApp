@@ -253,8 +253,6 @@
 
 <div class="shell">
   <TopBar projectName={$appState.project?.name ?? null} />
-  <ImportCalibrationBanner />
-  <CalibrationBar />
   <!-- 15 §11 — ≥1280: tool bar, canvas, docked right column. 1024–1279: the right column is a
        strip on the edge that opens it as an overlay (the canvas doesn't shrink). <1024 view-only:
        no tool bar. Tab hides both side columns at any width. -->
@@ -264,6 +262,15 @@
     {/if}
     <div class="canvas-area">
       <CanvasStage />
+      <!-- 15 §2.2 / 16 §3.2 CalibrationBar (overlay, 2026-11-15 — .scratch/calibration-bar-overlay)
+           — floats over the canvas instead of pushing it (and the tool bar, right column) down
+           when calibration starts; "nothing moves under the cursor" (§2.2). The two banners are
+           mutually exclusive (ImportCalibrationBanner hides the instant calibration starts), so
+           stacking them plainly is fine — only one ever renders. -->
+      <div class="calibration-overlay">
+        <ImportCalibrationBanner />
+        <CalibrationBar />
+      </div>
       {#if $layoutMode !== 'full' && !$sidePanelsHidden && $rightOverlayOpen}
         <div class="right-overlay" data-testid="right-column-overlay">
           <RightColumn />
@@ -324,6 +331,18 @@
     z-index: 20;
     display: flex;
     box-shadow: var(--af-shadow-e2);
+  }
+
+  /* Holds ImportCalibrationBanner/CalibrationBar flush with the canvas's top edge, spanning only
+     the canvas (not the tool bar or the right column, both siblings of .canvas-area). Same
+     z-index tier as .right-overlay (16 §3.1 Z-scale: "ToolBar/панели 20") — a sibling panel-like
+     surface, not a popover. Empty (no box) when neither banner renders. */
+  .calibration-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
   }
 
   .right-strip {

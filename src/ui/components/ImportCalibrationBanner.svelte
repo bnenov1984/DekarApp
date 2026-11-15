@@ -5,8 +5,9 @@
   // one-time, dismissable nudge shown right after a fresh image import (appState.ts's
   // showImportCalibrationHint — never on reopening an existing project, calibrated or not, which
   // would make it a nag rather than a nudge). Reuses CalibrationBar.svelte's own visual language
-  // (same bar height/position slot) but the two never show at once — this hides the instant
-  // calibration mode actually starts.
+  // (same bar height/floating treatment) but the two never show at once — this hides the instant
+  // calibration mode actually starts. Mounted inside Studio.svelte's `.calibration-overlay`,
+  // absolutely positioned over the canvas (2026-11-15 — .scratch/calibration-bar-overlay).
   import { activeSurface } from '../stores/studioSession.js';
   import { showImportCalibrationHint, dismissImportCalibrationHint } from '../stores/appState.js';
   import { startCalibration, calibrating } from '../stores/calibrationSession.js';
@@ -45,14 +46,16 @@
 <style>
   .import-hint {
     height: 40px;
-    flex: 0 0 40px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 0 14px;
     background: color-mix(in srgb, var(--af-warning) 12%, var(--af-surface-panel));
-    border-bottom: 1px solid var(--af-border-subtle);
+    border: 1px solid var(--af-border-subtle);
+    border-top: none;
+    border-radius: 0 0 var(--af-radius-md) var(--af-radius-md);
+    box-shadow: var(--af-shadow-e2);
   }
 
   .text {

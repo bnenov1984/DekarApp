@@ -5,6 +5,10 @@
   // "[value] [unit▾] ⏎ Set scale" row lives in CanvasStage.svelte instead (anchored to the drawn
   // line's midpoint, closer to W3's actual layout than a fixed bar position would be once a real
   // line exists on a large Surface) — this bar only ever shows the instruction/Cancel/Redraw row.
+  // Mounted inside Studio.svelte's `.calibration-overlay`, absolutely positioned over the canvas
+  // (2026-11-15 — .scratch/calibration-bar-overlay) — starting calibration used to push the tool
+  // bar, canvas and right column down by this bar's own height, which is exactly the "something
+  // moves under the cursor while you're about to click precisely" §2.2 forbids.
   import { calibrationDraft, calibrating, cancelCalibration, redrawLine } from '../stores/calibrationSession.js';
 </script>
 
@@ -29,14 +33,16 @@
 <style>
   .calibration-bar {
     height: 40px;
-    flex: 0 0 40px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 0 14px;
     background: var(--af-surface-panel);
-    border-bottom: 1px solid var(--af-border-subtle);
+    border: 1px solid var(--af-border-subtle);
+    border-top: none;
+    border-radius: 0 0 var(--af-radius-md) var(--af-radius-md);
+    box-shadow: var(--af-shadow-e2);
   }
 
   .hint {
