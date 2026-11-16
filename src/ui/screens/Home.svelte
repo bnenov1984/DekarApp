@@ -159,14 +159,16 @@
     padding: 24px 16px;
     background: var(--af-surface-panel);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e1);
+    border-radius: var(--af-radius);
     cursor: pointer;
     font-family: inherit;
   }
 
+  /* No shadow-lift on hover — a border-colour change instead, the same cue every bordered
+     control elsewhere in the app uses. */
   .card:hover:not(.disabled) {
-    box-shadow: var(--af-shadow-e2);
+    border-color: var(--af-border-strong);
+    background: var(--af-surface-app);
   }
 
   .card:focus-visible {
@@ -247,14 +249,15 @@
     padding: 14px;
     background: var(--af-surface-panel);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
+    border-radius: var(--af-radius);
     cursor: pointer;
     font-family: inherit;
     text-align: left;
   }
 
   .recent-card:hover {
-    box-shadow: var(--af-shadow-e1);
+    border-color: var(--af-border-strong);
+    background: var(--af-surface-app);
   }
 
   .recent-card:focus-visible {

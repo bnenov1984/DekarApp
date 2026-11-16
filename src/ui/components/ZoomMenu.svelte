@@ -133,7 +133,7 @@
     background: none;
     border: none;
     padding: 2px 6px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font: inherit;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
@@ -162,9 +162,9 @@
     display: flex;
     flex-direction: column;
     background: var(--af-surface-raised);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e3);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     font-size: 12.5px;
   }
 
@@ -175,7 +175,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
   }
 
   .zoom-input:focus-visible {
@@ -199,7 +199,7 @@
     color: var(--af-ink-primary);
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 

@@ -330,7 +330,8 @@
     bottom: 0;
     z-index: 20;
     display: flex;
-    box-shadow: var(--af-shadow-e2);
+    border-left: 1px solid var(--af-border-strong);
+    box-shadow: var(--af-shadow-float);
   }
 
   /* Holds ImportCalibrationBanner/CalibrationBar flush with the canvas's top edge, spanning only

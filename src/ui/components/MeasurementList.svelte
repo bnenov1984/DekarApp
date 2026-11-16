@@ -439,7 +439,7 @@
     background: none;
     border: none;
     padding: 0;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
     color: var(--af-ink-tertiary);
   }
@@ -467,7 +467,7 @@
     background: none;
     border: none;
     padding: 0;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
     color: var(--af-ink-tertiary);
     opacity: 0.3;
@@ -503,7 +503,7 @@
     align-items: center;
     gap: 9px;
     padding: 8px 9px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     background: none;
     border: none;
     text-align: left;
@@ -565,7 +565,7 @@
     background: none;
     border: none;
     padding: 2px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
     color: var(--af-ink-tertiary);
   }

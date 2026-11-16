@@ -110,8 +110,9 @@
     position: absolute;
     transform: translate(-50%, -50%);
     background: var(--af-surface-panel);
-    border-radius: var(--af-radius-sm);
-    box-shadow: var(--af-shadow-e1);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     padding: 4px 8px;
     display: flex;
     flex-direction: column;
@@ -130,7 +131,7 @@
   }
 
   .chip.selected {
-    box-shadow: var(--af-shadow-e2), 0 0 0 1.5px var(--af-accent);
+    box-shadow: var(--af-shadow-float), 0 0 0 1.5px var(--af-accent);
   }
 
   /* PO request (label visual hierarchy) — the name is the more important line, so it now matches

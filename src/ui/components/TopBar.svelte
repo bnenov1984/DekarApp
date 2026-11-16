@@ -204,7 +204,7 @@
     background: none;
     border: none;
     padding: 4px 6px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     max-width: 320px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -231,7 +231,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-accent);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 3px 5px;
     width: 200px;
   }
@@ -248,7 +248,7 @@
     background: none;
     border: 1px solid var(--af-border-subtle);
     padding: 5px 12px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 
@@ -281,7 +281,7 @@
     font-size: 16px;
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-secondary);
     cursor: pointer;
   }

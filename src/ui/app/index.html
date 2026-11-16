@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AreaFlow</title>
+    <!-- docs/16_DESIGN_SYSTEM.md §2.4 (2026-11-16) — without this the --af-font-ui/--af-font-mono
+         tokens silently fell back to the OS default sans the whole time; the app never actually
+         rendered in Inter for most users. Same fonts and host as the landing page (src/ui/index.html). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
   </head>
   <body>
     <div id="app"></div>

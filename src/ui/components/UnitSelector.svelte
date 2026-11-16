@@ -40,7 +40,7 @@
     background: none;
     border: none;
     padding: 2px 4px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 

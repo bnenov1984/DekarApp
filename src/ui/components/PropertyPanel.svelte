@@ -705,7 +705,7 @@
     background: none;
     border: 1px solid var(--af-border-subtle);
     padding: 5px 10px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 
@@ -739,7 +739,7 @@
     background: var(--af-surface-panel);
     border: 1px solid transparent;
     padding: 6px 10px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 
@@ -778,7 +778,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 6px 8px;
   }
 
@@ -799,7 +799,7 @@
     color: var(--af-ink-tertiary);
     background: none;
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 2px 6px;
     cursor: pointer;
   }
@@ -818,7 +818,7 @@
     color: var(--af-ink-secondary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 8px;
     text-align: left;
     cursor: pointer;
@@ -837,7 +837,7 @@
   .swatch {
     width: 20px;
     height: 20px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     border: 2px solid transparent;
     cursor: pointer;
   }
@@ -889,7 +889,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 3px 6px;
     text-align: right;
   }
@@ -927,7 +927,7 @@
     background: none;
     border: none;
     padding: 2px 6px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 
@@ -941,7 +941,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 6px 8px;
     resize: vertical;
   }

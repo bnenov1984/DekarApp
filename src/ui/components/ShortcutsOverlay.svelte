@@ -120,8 +120,9 @@
     max-height: calc(100vh - 96px);
     overflow: auto;
     background: var(--af-surface-raised);
-    border-radius: var(--af-radius-lg);
-    box-shadow: var(--af-shadow-e3);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     padding: 20px 24px;
   }
 
@@ -147,7 +148,7 @@
     justify-content: center;
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-secondary);
     font-size: 13px;
     cursor: pointer;

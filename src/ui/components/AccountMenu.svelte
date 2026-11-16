@@ -201,7 +201,7 @@
     padding: 5px 12px;
     background: none;
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-secondary);
     font-weight: 600;
     cursor: pointer;
@@ -231,9 +231,9 @@
     width: 260px;
     padding: 14px;
     background: var(--af-surface-raised);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e3);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -261,7 +261,7 @@
     padding: 6px 4px;
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-tertiary);
     cursor: pointer;
     font-weight: 550;
@@ -288,7 +288,7 @@
     padding: 7px 8px;
     background: var(--af-surface-app);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-primary);
     font: inherit;
   }
@@ -304,7 +304,7 @@
     background: var(--af-accent);
     color: var(--af-accent-ink);
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font-weight: 600;
     cursor: pointer;
   }
@@ -323,7 +323,7 @@
     padding: 7px;
     background: none;
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-secondary);
     font-weight: 550;
     cursor: pointer;

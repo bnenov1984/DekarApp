@@ -156,7 +156,7 @@
     background: none;
     border: none;
     padding: 2px 6px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font-size: 11.5px;
     color: var(--af-ink-secondary);
     cursor: pointer;
@@ -175,7 +175,7 @@
     border: none;
     padding: 2px 6px;
     margin-right: 6px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     color: var(--af-ink-secondary);

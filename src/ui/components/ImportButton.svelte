@@ -72,7 +72,7 @@
     background: none;
     border: 1px solid var(--af-border-subtle);
     padding: 5px 12px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 
@@ -102,8 +102,9 @@
     white-space: nowrap;
     color: var(--af-danger, #C62828);
     background: var(--af-surface-raised);
-    border-radius: var(--af-radius-sm);
-    box-shadow: var(--af-shadow-e2);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
   }
 
   .visually-hidden {

@@ -32,8 +32,8 @@
     padding: 10px 14px;
     background: var(--af-surface-raised);
     border: 1px solid var(--af-warning);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e3);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
   }
 
   .icon {
@@ -58,7 +58,7 @@
     margin-left: auto;
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font-size: 11px;
     color: var(--af-ink-tertiary);
     cursor: pointer;

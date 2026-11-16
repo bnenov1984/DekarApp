@@ -123,7 +123,7 @@
     justify-content: center;
     background: none;
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     color: var(--af-ink-secondary);
     cursor: pointer;
   }

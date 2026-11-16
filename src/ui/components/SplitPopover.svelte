@@ -161,9 +161,9 @@
     gap: 8px;
     padding: 12px;
     background: var(--af-surface-raised);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e3);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     outline: none;
   }
 
@@ -194,7 +194,7 @@
     color: var(--af-ink-secondary);
     background: var(--af-surface-panel);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 5px 10px;
     cursor: pointer;
   }
@@ -221,7 +221,7 @@
     color: var(--af-ink-primary);
     background: var(--af-surface-panel);
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 5px 6px;
     text-align: right;
   }
@@ -239,7 +239,7 @@
     color: var(--af-accent-ink);
     background: var(--af-accent);
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 7px 10px;
     cursor: pointer;
   }

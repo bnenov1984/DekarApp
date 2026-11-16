@@ -74,8 +74,9 @@
     min-width: 160px;
     padding: 4px;
     background: var(--af-surface-raised);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e3);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
   }
 
   .item {
@@ -89,7 +90,7 @@
     background: none;
     border: none;
     padding: 7px 10px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     cursor: pointer;
   }
 

@@ -142,7 +142,6 @@
   let canvas: HTMLCanvasElement;
   let backgroundCanvas: HTMLCanvasElement;
   let resizeObserver: ResizeObserver;
-  let darkSchemeQuery: MediaQueryList;
   let ctx: CanvasRenderingContext2D | null = null;
   let backgroundCtx: CanvasRenderingContext2D | null = null;
   let widthCss = 0;
@@ -161,8 +160,7 @@
 
   function readAccentColor(): string {
     // Canvas2D can't read CSS custom properties itself (sceneRenderer.ts stays pure/parameterized
-    // instead of reaching into `document`) — read fresh each redraw so a live theme toggle
-    // (16 §5: dark follows the system automatically) is reflected without a page reload.
+    // instead of reaching into `document`) — read fresh each redraw rather than caching it once.
     return getComputedStyle(container).getPropertyValue('--af-accent').trim() || '#0B6E4F';
   }
 
@@ -1016,19 +1014,11 @@
     resizeObserver = new ResizeObserver(() => resizeToContainer());
     resizeObserver.observe(container);
     container.addEventListener('wheel', onWheel, { passive: false });
-
-    // Found via live browser verification: readAccentColor() reads fresh on every redraw, but
-    // nothing was actually *triggering* a redraw when the OS color scheme changed — the reactive
-    // statement above only depends on surface/selection, not theme. Without this listener the
-    // canvas silently kept drawing the old theme's accent until the next unrelated redraw.
-    darkSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    darkSchemeQuery.addEventListener('change', redraw);
   });
 
   onDestroy(() => {
     container?.removeEventListener('wheel', onWheel);
     resizeObserver?.disconnect();
-    darkSchemeQuery?.removeEventListener('change', redraw);
   });
 </script>
 
@@ -1173,9 +1163,9 @@
     margin: 0;
     padding: 8px 14px;
     background: color-mix(in srgb, var(--af-surface-panel) 88%, transparent);
-    border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-md);
-    box-shadow: var(--af-shadow-e1);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     font-size: 13px;
     color: var(--af-ink-secondary);
     white-space: nowrap;
@@ -1188,7 +1178,7 @@
     pointer-events: none;
     background: var(--af-surface-panel);
     border: 1px dashed var(--af-accent);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 3px 7px;
     font-size: 12.5px;
     font-weight: 600;
@@ -1217,8 +1207,9 @@
     align-items: center;
     gap: 6px;
     background: var(--af-surface-raised);
-    border-radius: var(--af-radius-sm);
-    box-shadow: var(--af-shadow-e2);
+    border: 1px solid var(--af-border-strong);
+    border-radius: var(--af-radius);
+    box-shadow: var(--af-shadow-float);
     padding: 6px 8px;
     white-space: nowrap;
   }
@@ -1234,7 +1225,7 @@
     font-variant-numeric: tabular-nums;
     padding: 3px 6px;
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     background: var(--af-surface-panel);
     color: var(--af-ink-primary);
   }
@@ -1243,7 +1234,7 @@
     font: inherit;
     padding: 3px 4px;
     border: 1px solid var(--af-border-subtle);
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     background: var(--af-surface-panel);
     color: var(--af-ink-primary);
   }
@@ -1254,7 +1245,7 @@
     color: var(--af-accent-ink);
     background: var(--af-accent);
     border: none;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     padding: 4px 8px;
     cursor: pointer;
   }

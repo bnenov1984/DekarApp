@@ -39,10 +39,10 @@
     gap: 12px;
     padding: 0 14px;
     background: var(--af-surface-panel);
-    border: 1px solid var(--af-border-subtle);
+    border: 1px solid var(--af-border-strong);
     border-top: none;
-    border-radius: 0 0 var(--af-radius-md) var(--af-radius-md);
-    box-shadow: var(--af-shadow-e2);
+    border-radius: 0 0 var(--af-radius) var(--af-radius);
+    box-shadow: var(--af-shadow-float);
   }
 
   .hint {
@@ -61,7 +61,7 @@
     background: none;
     border: none;
     padding: 4px 8px;
-    border-radius: var(--af-radius-sm);
+    border-radius: var(--af-radius);
     font-size: 12.5px;
     font-weight: 600;
     color: var(--af-accent);
