@@ -8,6 +8,5 @@ import type { AppSettings } from '../application/ports/settingsRepository.js';
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   language: 'en',
   defaultUnit: 'm2',
-  theme: 'system',
   defaultWorkspaceId: 'general',
 };

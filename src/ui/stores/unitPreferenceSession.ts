@@ -26,7 +26,7 @@ export async function initUnitPreference(): Promise<void> {
 /** UnitSelector.svelte's only write path — updates the live store immediately (every projection
  * re-renders) and persists fire-and-forget (PD-012 D6 "no Save button" convention, same as every
  * other autosave in this app), reading the current settings first so an unrelated field
- * (language/theme/defaultWorkspaceId) is never clobbered by a save that only meant to change the
+ * (language/defaultWorkspaceId) is never clobbered by a save that only meant to change the
  * unit. */
 export function setDisplayUnit(unit: Unit): void {
   displayUnit.set(unit);
