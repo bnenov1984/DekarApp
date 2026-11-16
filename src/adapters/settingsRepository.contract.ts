@@ -14,7 +14,7 @@ export function runSettingsRepositoryContractTests(make: () => SettingsRepositor
 
     it('save then get round-trips exactly', async () => {
       const settings = await make();
-      const custom = { ...DEFAULT_APP_SETTINGS, defaultUnit: 'ft2' as const, theme: 'dark' as const };
+      const custom = { ...DEFAULT_APP_SETTINGS, defaultUnit: 'ft2' as const };
       await settings.save(custom);
       expect(await settings.get()).toEqual(custom);
     });

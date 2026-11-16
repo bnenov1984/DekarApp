@@ -10,7 +10,6 @@ import type { Unit } from '../../core/domain/types.js';
 export interface AppSettings {
   readonly language: string; // PD-010 — locale key, e.g. 'en' | 'bg'
   readonly defaultUnit: Unit;
-  readonly theme: 'light' | 'dark' | 'system';
   readonly defaultWorkspaceId: string;
 }
 
