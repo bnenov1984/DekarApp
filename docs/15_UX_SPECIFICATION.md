@@ -93,6 +93,14 @@ AreaFlow
 └── Account (минимален)
 ```
 
+**Статус на Home (2026-07-22, "simplify entry flow", потвърдено в §3):** приложението се отваря
+директно в Studio с празен проект; нищо в текущия flow не сочи към Home — нито start-up, нито
+логото (премахнат е единственият `onBack` affordance, виж TopBar.svelte). `Home.svelte` и
+свързаният `Screen = 'home' | 'studio'` остават в кода като евтино обратимо scaffolding (PO
+решение — "cheap to keep, cheap to reverse"), не като достъпен екран. Дървото по-горе описва
+концептуалната IA, не непременно какво е wired днес — "отваряне на проект" (Recent) днес минава
+през Account → "Your cloud projects", не през Home (виж §15/§17 по-долу).
+
 ### 2.2. Панелна таксономия — кой панел за какво отговаря
 
 | Регион | Съдържание | Кога се вижда |
@@ -126,8 +134,8 @@ AreaFlow
 ## §4. Screen Hierarchy
 
 ```
-S1  Home
-S2  Studio  ─ единственият сложен екран
+S1  Home    ─ недостъпен от текущия flow (кодът е запазен, не е wired; §2.1, §3)
+S2  Studio  ─ единственият достъпен работен екран
 O1  Command Palette      (overlay, навсякъде)
 O2  Extension Marketplace (overlay над Studio/Home)
 O3  Export & Report       (overlay над Studio)
@@ -148,7 +156,7 @@ O6  Onboarding "first measurement" hints (еднократен, ненатрап
 
 | # | Стъпка | UI | Кликове |
 |---|--------|----|---------|
-| 1 | Home → "Start on a map" | Голяма карта-афорданс | 1 |
+| 1 | Studio отваря директно с празен проект → "Start on a map" | Голяма карта-афорданс [PENDING: Map Surface все още не е построена — PD-011 v1 обхват е PNG/JPG/PDF; тази стъпка е North-Star цел, не текущо достъпна] | 1 |
 | 2 | Търсене на адрес/място | Search field, автофокус (Maps идиом, P7) | въвеждане + Enter |
 | 3 | Картата се центрира; Tool Bar-ът подсказва Polygon (пулс еднократно) | Onboarding слой O6 | 0 |
 | 4 | Клик на Polygon (или клавиш P) | Tool Bar | 1 |
@@ -160,7 +168,7 @@ O6  Onboarding "first measurement" hints (еднократен, ненатрап
 
 ### F2. Import на изображение + календриране + измерване
 
-1. Home → "Import a file" (или drag-and-drop върху цялото Home/Studio — винаги активен drop target). **1 клик / 0 при drop.**
+1. Studio отваря директно с празен проект → ImportButton в горната лента (или drag-and-drop върху платното — винаги активен drop target). **1 клик / 0 при drop.**
 2. Файлът се отваря като Surface. **CalibrationBar** се появява като overlay над платното, долепен до горния му ръб (не бута платното/дока/дясната колона надолу, §2.2): *"Draw a line along a known distance"* — инструментът линия е вече армиран. Не е модал: потребителят може да игнорира и да чертае.
 3. Потребителят тегли линия по позната дължина (стена, мащабна лента на чертежа) → inline поле: `[____] m ▾` → Enter. **Календрирано с 1 чертане + 1 въвеждане.**
 4. Ако пропусне календрирането: измерванията работят, но показват `px` и chip-овете са в warning стил с клик-към-календриране. Нищо не е блокирано.
@@ -284,6 +292,11 @@ O6  Onboarding "first measurement" hints (еднократен, ненатрап
 ```
 
 ### W4. Home
+
+**Статус:** `Home.svelte` остава в кода — не е изтрит ("cheap to keep, cheap to reverse", PO
+"simplify entry flow", 2026-07-22) — но не е достъпен от текущия flow: Studio се отваря директно
+с празен проект и логото вече няма click handler обратно към Home (§2.1, §3). Тази wireframe
+документира компонента, не активен екран.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -430,7 +443,7 @@ Selection is a direct canvas interaction and is not represented as a toolbar mod
 
 | Контекст | Съдържание | Принцип |
 |----------|-----------|---------|
-| Home без проекти | Трите Start карти + едноредово обещание ("Measure anything. On maps, plans, and photos.") | Empty state = onboarding, не извинение |
+| Home без проекти *(компонентът е запазен, недостъпен от текущия flow — §2.1)* | Трите Start карти + едноредово обещание ("Measure anything. On maps, plans, and photos.") | Empty state = onboarding, не извинение |
 | Studio, празно платно | W2: трите афорданса в центъра на платното | Действието живее там, където ще се случи |
 | Measurement List без измервания | Панелът просто не се показва | Най-добрият празен панел е никакъв (P2) |
 | Extensions таб без инсталирани | 2–3 предложени за текущия workspace + Browse | Празнотата продава каталога, ненатрапчиво |
@@ -460,7 +473,7 @@ Selection is a direct canvas interaction and is not represented as a toolbar mod
 | Import обработка | Surface скелет + progress с етапи ("Reading file… Rendering…"); отменимо; UI-ят не блокира |
 | Map tiles | Стандартен fade-in; кешираните региони се появяват мигновено |
 | AI inference | Shimmer върху анализирания регион + отменим chip ("✦ Detecting… ✕"); платното остава работно |
-| Отваряне на проект | Preview картата от Home се разширява в платно (continuity); скелет за панелите |
+| Отваряне на проект | Днес през Account → "Your cloud projects" → Open (Home's Recent-card continuity е недостъпна — §2.1); скелет за панелите |
 | Първо зареждане (PWA) | < 3 сек до интерактивно платно е design бюджет (Performance First); splash само при cold start |
 
 Правило: спинър без контекст е забранен. Всяко чакане казва какво чака и (ако >2 сек) може да се отмени.
