@@ -243,7 +243,15 @@
      RightColumn.svelte. An empty project shows "No shapes yet." instead of hiding the panel, so the
      canvas no longer jumps sideways when the first shape is drawn. -->
 <div class="panel" data-testid="layers-panel">
-  <div class="header">Layers{#if rows.length > 0 || hasBackgroundLayer} <span class="count">{rows.length + (hasBackgroundLayer ? 1 : 0)}</span>{/if}</div>
+  <!-- PO follow-up (Studio UI review, 2026-11-15, finding "Layers¹ reads as a footnote") — the
+       count used to render as a bare superscript character after the title; now a small pill in
+       secondary ink, the conventional treatment for a count next to a section header. -->
+  <div class="header">
+    <span>Layers</span>
+    {#if rows.length > 0 || hasBackgroundLayer}
+      <span class="count" data-testid="layers-count">{rows.length + (hasBackgroundLayer ? 1 : 0)}</span>
+    {/if}
+  </div>
   {#if rows.length === 0 && !hasBackgroundLayer}
     <p class="empty-state" data-testid="layers-panel-empty">No shapes yet.</p>
   {:else}
@@ -302,7 +310,13 @@
             on:dragend={handleDragEnd}
           >
             {#if row.depth > 0}<span class="child-marker" aria-hidden="true">▸</span>{/if}
-            <span class="drag-handle" aria-hidden="true">⠿</span>
+            <!-- PO follow-up (Studio UI review, 2026-11-15, finding "drag handle is a braille
+                 character") — the Unicode glyph U+28FF fell back to whatever font the OS chose
+                 and didn't match the 1.75px icon set (16 §4); a real icon, shown on row hover
+                 only (the row itself is draggable everywhere, not just from this affordance). -->
+            <span class="drag-handle" aria-hidden="true">
+              <Icon name="grip" size={14} />
+            </span>
             <span class="swatch" style="background: {row.color}"></span>
             <span class="name">{row.name}</span>
             <span class="value">{row.primaryLabel}</span>
@@ -360,6 +374,9 @@
 
   /* Same header style as PropertyPanel's: one look for every section title in the column. */
   .header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12.5px;
     font-weight: 600;
     padding: 10px 12px 8px;
@@ -374,8 +391,18 @@
   }
 
   .count {
-    color: var(--af-ink-tertiary);
-    font-weight: 450;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--af-surface-app);
+    color: var(--af-ink-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .list {
@@ -590,11 +617,17 @@
   }
 
   .drag-handle {
+    display: flex;
+    align-items: center;
     color: var(--af-ink-tertiary);
-    font-size: 13px;
-    line-height: 1;
     cursor: grab;
     flex: 0 0 auto;
+    opacity: 0;
+  }
+
+  .row:hover .drag-handle,
+  .row.dragging .drag-handle {
+    opacity: 1;
   }
 
   /* Drop-position indicator — a thin line at the top/bottom edge of the row currently being

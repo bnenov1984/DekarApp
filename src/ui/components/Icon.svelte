@@ -26,6 +26,7 @@
     | 'split'
     | 'trash'
     | 'layers'
+    | 'grip'
     | 'user';
   export let size = 16;
 </script>
@@ -106,6 +107,19 @@
     <path d="M12 3.5 3 8l9 4.5L21 8z" />
     <path d="m3 12 9 4.5 9-4.5" />
     <path d="m3 16 9 4.5 9-4.5" />
+  {:else if name === 'grip'}
+    <!-- PO follow-up (Studio UI review, 2026-11-15, finding "drag handle is a braille
+         character") — six dots, the conventional reorder-grip glyph (Trello/Linear/Notion row
+         handles). Filled, not stroked — a 1.8px outline on a ~1.3px dot would render as a thin
+         ring, not a dot. -->
+    <g fill="currentColor" stroke="none">
+      <circle cx="9" cy="6.5" r="1.35" />
+      <circle cx="15" cy="6.5" r="1.35" />
+      <circle cx="9" cy="12" r="1.35" />
+      <circle cx="15" cy="12" r="1.35" />
+      <circle cx="9" cy="17.5" r="1.35" />
+      <circle cx="15" cy="17.5" r="1.35" />
+    </g>
   {:else if name === 'user'}
     <circle cx="12" cy="8" r="3.6" />
     <path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5" />
