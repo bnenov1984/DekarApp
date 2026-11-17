@@ -39,6 +39,18 @@ export type DomainEvent =
       readonly measurementId: MeasurementId;
       readonly vertexIndex: number;
     }
+  | {
+      readonly type: 'MeasurementVertexLabelOffsetSet';
+      readonly surfaceId: SurfaceId;
+      readonly measurementId: MeasurementId;
+      readonly vertexIndex: number;
+    }
+  | {
+      readonly type: 'MeasurementVertexLabelFontSizeSet';
+      readonly surfaceId: SurfaceId;
+      readonly measurementId: MeasurementId;
+      readonly vertexIndex: number;
+    }
   | { readonly type: 'MeasurementManualAreaSet'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
   | { readonly type: 'MeasurementLabelMoved'; readonly surfaceId: SurfaceId; readonly measurementId: MeasurementId }
   | {

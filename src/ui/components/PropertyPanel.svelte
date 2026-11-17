@@ -15,6 +15,7 @@
     executeCommand,
     deleteSelectedMeasurement,
     setVertexLabel,
+    setVertexLabelFontSize,
     setManualArea,
   } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
@@ -43,7 +44,8 @@
   } from '../measurement/computeDisplay.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
   import { shoelaceArea } from '../../core/measurement/formulas.js';
-  import type { MeasurementIdentity } from '../../core/domain/entities.js';
+  import { VERTEX_LABEL_FONT_SIZE_LEVELS, defaultVertexLabelFontSizeLevel } from '../measurement/vertexLabelFontSize.js';
+  import type { MeasurementIdentity, VertexLabel } from '../../core/domain/entities.js';
 
   const MEASUREMENT_COLORS = [
     '#2E7D32',
@@ -123,12 +125,17 @@
   let labelDraftKey: string | null = null;
   let labelTextDraft = '';
   let labelColorDraft: string = DEFAULT_LABEL_COLOR;
+  // Grilling session 2026-11-18 — the slider's own draft value, same "always a concrete level,
+  // never undefined" treatment as labelColorDraft above: a label that's never had an explicit
+  // size shows the level closest to the pre-existing fixed 12px, not a blank/zeroed control.
+  let labelFontSizeDraft: number = defaultVertexLabelFontSizeLevel();
   $: if (activeLabel) {
     const key = `${activeLabel.measurementId}:${activeLabel.vertexIndex}`;
     if (key !== labelDraftKey) {
       labelDraftKey = key;
       labelTextDraft = currentVertexLabel?.text ?? '';
       labelColorDraft = currentVertexLabel?.color ?? DEFAULT_LABEL_COLOR;
+      labelFontSizeDraft = currentVertexLabel?.fontSize ?? defaultVertexLabelFontSizeLevel();
     }
   } else {
     labelDraftKey = null;
@@ -273,12 +280,32 @@
     if (noteDraft !== (measurement.identity.note ?? '')) commitIdentity({ note: noteDraft });
   }
 
+  // Grilling session 2026-11-18 — VertexLabel now carries fontSize/offset alongside text/color
+  // (entities.ts), both reconstructed here by onVertexLabelTextBlur/onVertexLabelColorPick below.
+  // Rebuilding `{ text, color }` from scratch, as both did before this field existed, would
+  // silently wipe out a label's size or dragged-away position on every text/color edit — the
+  // exact footgun setVertexLabelOffsetCommand/setVertexLabelFontSizeCommand exist to avoid for
+  // their OWN call sites, equally real here. Reads from `currentVertexLabel` (the actual stored
+  // value), never from `labelFontSizeDraft` (always shows *some* level even for a label that has
+  // never had one set) — so a brand-new label still starts with no stored fontSize at all.
+  function withPreservedSizeAndOffset(patch: { text: string; color: string }): VertexLabel {
+    return {
+      ...patch,
+      ...(currentVertexLabel?.fontSize !== undefined && { fontSize: currentVertexLabel.fontSize }),
+      ...(currentVertexLabel?.offset !== undefined && { offset: currentVertexLabel.offset }),
+    };
+  }
+
   // Empty text clears the label entirely (null) rather than leaving a dangling empty-text-plus-
   // color entry — matches vertexLabels.ts's own "no text = no label" normalization.
   function onVertexLabelTextBlur(): void {
     if (!activeLabel) return;
     const trimmed = labelTextDraft.trim();
-    setVertexLabel(activeLabel.measurementId, activeLabel.vertexIndex, trimmed ? { text: trimmed, color: labelColorDraft } : null);
+    setVertexLabel(
+      activeLabel.measurementId,
+      activeLabel.vertexIndex,
+      trimmed ? withPreservedSizeAndOffset({ text: trimmed, color: labelColorDraft }) : null,
+    );
   }
 
   // Color applies immediately (like the Measurement's own onColorPick) but only actually commits
@@ -287,7 +314,18 @@
   function onVertexLabelColorPick(color: string): void {
     labelColorDraft = color;
     const trimmed = labelTextDraft.trim();
-    if (activeLabel && trimmed) setVertexLabel(activeLabel.measurementId, activeLabel.vertexIndex, { text: trimmed, color });
+    if (activeLabel && trimmed) {
+      setVertexLabel(activeLabel.measurementId, activeLabel.vertexIndex, withPreservedSizeAndOffset({ text: trimmed, color }));
+    }
+  }
+
+  // Grilling session 2026-11-18 — applies immediately as the slider moves (same "no Save button"
+  // convention as color above), but only actually commits if there's already text, same reasoning
+  // as onVertexLabelColorPick: a size picked before any text exists would otherwise create/keep
+  // an empty-text label.
+  function onVertexLabelFontSizeChange(level: number): void {
+    labelFontSizeDraft = level;
+    if (activeLabel && labelTextDraft.trim()) setVertexLabelFontSize(activeLabel.measurementId, activeLabel.vertexIndex, level);
   }
 
   // 11 §4 — deleteMeasurementCommand already owns the split-parent/split-child/plain lifecycle
@@ -564,6 +602,21 @@
               on:click={() => onVertexLabelColorPick(color)}
             ></button>
           {/each}
+        </div>
+        <div class="label-size-row">
+          <label class="notes-label" for="vertex-label-size">Size</label>
+          <input
+            id="vertex-label-size"
+            type="range"
+            min="1"
+            max={VERTEX_LABEL_FONT_SIZE_LEVELS}
+            step="1"
+            value={labelFontSizeDraft}
+            on:input={(e) => onVertexLabelFontSizeChange(Number(e.currentTarget.value))}
+            aria-label="Vertex label font size, 1 to 10"
+            data-testid="vertex-label-size"
+          />
+          <span class="label-size-value" data-testid="vertex-label-size-value">{labelFontSizeDraft}</span>
         </div>
       {:else}
         <label class="notes-label" for="property-notes">Notes</label>
@@ -849,6 +902,29 @@
   .swatch:focus-visible {
     outline: 2px solid var(--af-accent);
     outline-offset: 1px;
+  }
+
+  /* Grilling session 2026-11-18 — a single linear 1-10 scale reads better as one range input
+     than as 10 discrete buttons (which would roughly double this section's height for a choice
+     that's genuinely a slider, not a palette). */
+  .label-size-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .label-size-row input[type='range'] {
+    flex: 1;
+    accent-color: var(--af-accent);
+  }
+
+  .label-size-value {
+    min-width: 14px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-ink-secondary);
+    text-align: right;
   }
 
   .values {
