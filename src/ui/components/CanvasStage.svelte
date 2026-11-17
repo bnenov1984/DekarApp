@@ -38,6 +38,7 @@
     pointerUp,
     handleEnter,
     snapTarget,
+    showEdgeLengths,
   } from '../stores/drawingSession.js';
   import {
     calibrating,
@@ -118,6 +119,7 @@
   } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay, applyManualArea } from '../measurement/computeDisplay.js';
+  import { computePolygonEdgeLabels } from '../measurement/edgeLabels.js';
   import type { Point, PolygonShape, Shape } from '../../core/domain/types.js';
   import type { MeasurementId } from '../../core/domain/entities.js';
   import type { DrawingDraft } from '../stores/drawingSession.js';
@@ -445,6 +447,14 @@
   // scale-aware here.
   const SELECT_HIT_TOLERANCE_SCREEN_PX = 4;
   const HANDLE_HIT_TOLERANCE_SCREEN_PX = 8;
+  // PO request (per-edge length labels, grilling session 2026-11-17) — below this on-screen edge
+  // length there's no room to render a legible number without it overlapping its neighbors (short
+  // edges / dense vertices), so the label simply doesn't render rather than crowding the canvas.
+  // No existing "shrink/hide at small zoom" behavior to reuse here: 16_DESIGN_SYSTEM.md §3.1
+  // describes that for MeasurementChip, but it was never actually implemented (checked — no scale
+  // threshold exists anywhere in this file or MeasurementChip.svelte today), so this is a fresh,
+  // edge-length-specific threshold rather than a shared one.
+  const MIN_EDGE_LABEL_SCREEN_PX = 36;
   $: selectHitTolerance = SELECT_HIT_TOLERANCE_SCREEN_PX / $viewport.scale;
   $: handleHitTolerance = HANDLE_HIT_TOLERANCE_SCREEN_PX / $viewport.scale;
 
@@ -995,6 +1005,56 @@
     },
   );
 
+  // PO request (per-edge length labels, grilling session 2026-11-17) — one DOM label per Polygon
+  // edge, same "DOM projection of Shape/Measurement data, never drawn on the canvas" split as
+  // chips/vertexLabelChips above (21 §6.3). Gated behind the global `showEdgeLengths` toggle
+  // (StatusBar.svelte) rather than selection or any other state — settled in grilling as "shown on
+  // all polygons at once," not a per-Measurement or selection-gated reveal.
+  $: edgeLengthLabels = $showEdgeLengths
+    ? ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? []).flatMap((measurement) => {
+        // Same exclusions as chips/vertexLabelChips: a hidden Measurement shows none of its own
+        // decorations, and only Polygon has segment lengths at all (measurementEngine.ts).
+        if (measurement.identity.hidden || measurement.shape.type !== 'polygon') return [];
+        return computePolygonEdgeLabels(
+          measurement.shape.vertices,
+          true,
+          $activeSurface!.calibration,
+          $displayUnit,
+        ).flatMap((label, index) => {
+          const screenLength = Math.hypot(label.to.x - label.from.x, label.to.y - label.from.y) * $viewport.scale;
+          if (screenLength < MIN_EDGE_LABEL_SCREEN_PX) return [];
+          const { x, y } = worldToScreen($viewport, label.midpoint);
+          return [{ key: `${measurement.id}-${index}`, x, y, angleDeg: label.angleDeg, text: label.text }];
+        });
+      })
+    : [];
+
+  // Live while drawing a Polygon (15 §5 F1 step 5-style liveness, extended per the same grilling
+  // session to edge lengths) — the exact same points array (draft points + live cursor) the
+  // existing live-area preview (`previewShape` below) already builds, but `closed: false`:
+  // `computePolygonEdgeLabels` then drops the not-yet-drawn wraparound edge back to the first
+  // point that a *closed* synthetic Polygon would otherwise imply.
+  $: draftPolygonPoints =
+    $drawingDraft?.kind === 'points' && $drawingDraft.tool === 'polygon'
+      ? $cursorSurfacePoint
+        ? [...$drawingDraft.points, $cursorSurfacePoint]
+        : $drawingDraft.points
+      : null;
+  $: draftEdgeLengthLabels =
+    $showEdgeLengths && draftPolygonPoints
+      ? computePolygonEdgeLabels(
+          draftPolygonPoints,
+          false,
+          $activeSurface?.calibration ?? null,
+          $displayUnit,
+        ).flatMap((label, index) => {
+          const screenLength = Math.hypot(label.to.x - label.from.x, label.to.y - label.from.y) * $viewport.scale;
+          if (screenLength < MIN_EDGE_LABEL_SCREEN_PX) return [];
+          const { x, y } = worldToScreen($viewport, label.midpoint);
+          return [{ key: `draft-${index}`, x, y, angleDeg: label.angleDeg, text: label.text }];
+        })
+      : [];
+
   // PO request (canvas zoom, mouse wheel): registered via a plain `addEventListener` with
   // `{ passive: false }` rather than Svelte's `on:wheel` directive — wheel listeners are
   // increasingly defaulted to passive by browsers for scroll-perf reasons, and a passive listener
@@ -1075,6 +1135,24 @@
       class="vertex-label-chip"
       style="left: {label.x}px; top: {label.y}px; color: {label.color};"
       data-testid="vertex-label-chip"
+    >
+      {label.text}
+    </div>
+  {/each}
+  {#each edgeLengthLabels as label (label.key)}
+    <div
+      class="edge-length-label"
+      style="left: {label.x}px; top: {label.y}px; transform: translate(-50%, -50%) rotate({label.angleDeg}deg);"
+      data-testid="edge-length-label"
+    >
+      {label.text}
+    </div>
+  {/each}
+  {#each draftEdgeLengthLabels as label (label.key)}
+    <div
+      class="edge-length-label"
+      style="left: {label.x}px; top: {label.y}px; transform: translate(-50%, -50%) rotate({label.angleDeg}deg);"
+      data-testid="edge-length-label"
     >
       {label.text}
     </div>
@@ -1193,6 +1271,25 @@
     pointer-events: none;
     font-size: 12px;
     font-weight: 700;
+    text-shadow:
+      0 0 3px var(--af-surface-app),
+      0 0 3px var(--af-surface-app),
+      0 0 3px var(--af-surface-app);
+    white-space: nowrap;
+  }
+
+  /* PO request (per-edge length labels, grilling session 2026-11-17) — tiny, pale, no background/
+     border/box (explicit request, as opposed to MeasurementChip's opaque pill). The text-shadow
+     glow is the same technique .vertex-label-chip above already uses for legibility over an
+     arbitrary photo/map background, just applied to a muted color instead of a bold one. Purely
+     decorative: no onClick/onDragStart, `pointer-events: none` so it never intercepts a click
+     meant for the shape or chip beneath it. */
+  .edge-length-label {
+    position: absolute;
+    pointer-events: none;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--af-ink-tertiary);
     text-shadow:
       0 0 3px var(--af-surface-app),
       0 0 3px var(--af-surface-app),

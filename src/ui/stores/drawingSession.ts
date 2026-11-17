@@ -64,6 +64,13 @@ export const activeTool = writable<DrawingTool | null>(null);
 /** 15 §13 `S` — persistent user preference; `⌥`/Alt is a *temporary* override on top of this,
  * never the other way around (18 §4: "Alt временно изключва"). */
 export const snapEnabled = writable(true);
+/** PO request (per-edge length labels, grilling session 2026-11-17) — global, app-wide view
+ * preference, same ephemeral-but-sticky-for-the-session category as `snapEnabled` above (resets
+ * to its default on reload, never written to settingsRepository); deliberately NOT a per-
+ * Measurement flag, so one toggle governs every Polygon's edge labels at once. Defaults to `false`
+ * (unlike snap) — these numbers are read-when-wanted information, not an always-useful drawing
+ * aid, so opt-in avoids surprising every user with extra canvas clutter they didn't ask for. */
+export const showEdgeLengths = writable(false);
 export const drawingDraft = writable<DrawingDraft | null>(null);
 /** the cursor's current Surface-space position while a tool is armed — drives the live
  * look-ahead segment/drag-preview and the live numeric label (consumed by CanvasStage). */
@@ -236,6 +243,10 @@ export function toggleSnap(): void {
   snapEnabled.update((v) => !v);
 }
 
+export function toggleEdgeLengths(): void {
+  showEdgeLengths.update((v) => !v);
+}
+
 export function pointerDown(point: Point, modifiers: PointerModifiers = NO_MODIFIERS): void {
   const tool = get(activeTool);
   if (tool === null || tool === 'pan') return;
@@ -346,11 +357,13 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
     __areaflowDrawingDev: {
       activeTool,
       snapEnabled,
+      showEdgeLengths,
       drawingDraft,
       cursorSurfacePoint,
       snapTarget,
       setTool,
       toggleSnap,
+      toggleEdgeLengths,
       pointerDown,
       pointerMove,
       pointerUp,

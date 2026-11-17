@@ -4,7 +4,7 @@
   // 5: "клик → рекалибриране"), the Unit selector (PO request, expanded unit system) and the zoom %
   // (moved here from the canvas corner, 15 §2.2 Photoshop layout, 2026-10-11; its menu is
   // ZoomMenu.svelte) are live.
-  import { snapEnabled, toggleSnap, activeTool } from '../stores/drawingSession.js';
+  import { snapEnabled, toggleSnap, showEdgeLengths, toggleEdgeLengths, activeTool } from '../stores/drawingSession.js';
   import { openShortcutsOverlay } from '../stores/shortcutsOverlaySession.js';
   import Icon from './Icon.svelte';
   import { activeSurface, selectedMeasurementId, selectedMeasurementIds, backgroundSelected } from '../stores/studioSession.js';
@@ -120,6 +120,14 @@
   {/if}
   <button type="button" class="snap-indicator" on:click={toggleSnap} data-testid="snap-indicator">
     <Icon name="magnet" size={12} /> snap {$snapEnabled ? 'on' : 'off'}
+  </button>
+  <button
+    type="button"
+    class="snap-indicator"
+    on:click={toggleEdgeLengths}
+    data-testid="edge-lengths-indicator"
+  >
+    edges {$showEdgeLengths ? 'on' : 'off'}
   </button>
   <UnitSelector />
   <ZoomMenu />
