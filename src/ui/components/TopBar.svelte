@@ -16,6 +16,12 @@
   // (logo, project name) · history (Undo/Redo) · spacer · file actions (Import, Export) · account.
   // Every item is a flex child of the bar; nothing is positioned over it (the account menu used to
   // be `position: fixed` in the window corner, where it covered Undo/Redo).
+  //
+  // PD-026 — the logo mark/wordmark here now match the public landing page (src/ui/index.html's
+  // nav logo, same inline SVG path data as docs/mockups/brand/dekar-mark.svg): the "Dekar" market
+  // name is approved, and the logo was explicitly named as one of the still-deferred spots. The
+  // rest of PD-026's rename (page <title>, repo/package name, Render service, domain) stays
+  // "AreaFlow" until that separate task.
   import { canUndo, canRedo, undo, redo, activeSurface } from '../stores/studioSession.js';
   import { renameProject } from '../stores/appState.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
@@ -90,17 +96,14 @@
 
 <header class="topbar">
   <div class="logo">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M4 8 L4 20 L16 20"
-        stroke="var(--af-accent)"
-        stroke-width="2.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <path d="M9 4 L20 4 L20 15 Z" fill="var(--af-accent)" opacity="0.85" />
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 1.5 V5.4" stroke="currentColor" stroke-width="1.4" />
+      <rect x="10" y="5.4" width="4" height="2.3" fill="currentColor" />
+      <path d="M8 7.7 H16 V11.6 L12 18.6 L8 11.6 Z" fill="currentColor" />
+      <path d="M3.5 21.4 H8.6 M15.4 21.4 H20.5" stroke="currentColor" stroke-width="1.2" />
+      <rect x="10.4" y="19.8" width="3.2" height="3.2" fill="var(--af-accent)" />
     </svg>
-    <span>AreaFlow</span>
+    <span>Dekar</span>
   </div>
 
   {#if projectName}
