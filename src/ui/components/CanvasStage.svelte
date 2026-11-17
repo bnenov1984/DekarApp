@@ -24,6 +24,7 @@
     flashBackgroundLock,
     executeCommand,
     setLabelOffset,
+    setVertexLabelOffset,
   } from '../stores/studioSession.js';
   import { updateIdentityCommand } from '../../application/commands/updateIdentity.js';
   import { openContextMenu } from '../contextMenu/contextMenuSession.js';
@@ -86,6 +87,14 @@
     cancelDrag as cancelLabelDrag,
   } from '../stores/labelDragSession.js';
   import {
+    vertexLabelDrag,
+    pointerDown as vertexLabelDragPointerDown,
+    pointerMove as vertexLabelDragPointerMove,
+    pointerUp as vertexLabelDragPointerUp,
+    cancelDrag as cancelVertexLabelDrag,
+    VERTEX_LABEL_DRAG_RADIUS_SCREEN_PX,
+  } from '../stores/vertexLabelDragSession.js';
+  import {
     viewport,
     zoomWheel,
     fitToContentRequested,
@@ -114,16 +123,19 @@
     drawSelectionOutline,
     drawSplitPreview,
     drawBackgroundImage,
+    drawVertexLabelDragGuide,
     resizeHandlePoints,
     type ContainRect,
   } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay, applyManualArea } from '../measurement/computeDisplay.js';
   import { computePolygonEdgeLabels } from '../measurement/edgeLabels.js';
+  import { vertexLabelFontSizePx } from '../measurement/vertexLabelFontSize.js';
   import type { Point, PolygonShape, Shape } from '../../core/domain/types.js';
   import type { MeasurementId } from '../../core/domain/entities.js';
   import type { DrawingDraft } from '../stores/drawingSession.js';
   import MeasurementChip from './MeasurementChip.svelte';
+  import VertexLabelChip from './VertexLabelChip.svelte';
   import ScaleBar from './ScaleBar.svelte';
 
   interface ChipData {
@@ -305,6 +317,20 @@
       // session is active — a plain outline still confirms "this is the selected layer" without
       // implying it can be dragged (canResizeImage's own handles cover that case above).
       drawSelectionOutline(ctx, toRectangleShape(currentImageRect), readAccentColor());
+    }
+    // Grilling session 2026-11-18, Q8 — the vertex-label drag's radius boundary, shown only while
+    // a drag is actually in progress. Centered on the vertex's own *current* point (resolved
+    // fresh here, not cached from drag-start), same "never checked against stale geometry"
+    // discipline onWindowMouseMove already follows for the polygon-label drag above it.
+    if ($vertexLabelDrag) {
+      const dragging = surface.layers
+        .flatMap((l) => l.measurements)
+        .find((m) => m.id === $vertexLabelDrag!.measurementId);
+      const points = dragging ? resizeHandlePoints(dragging.shape) : null;
+      const center = points?.[$vertexLabelDrag.vertexIndex];
+      if (center) {
+        drawVertexLabelDragGuide(ctx, center, VERTEX_LABEL_DRAG_RADIUS_SCREEN_PX / $viewport.scale, readAccentColor());
+      }
     }
   }
 
@@ -700,6 +726,10 @@
       const committed = labelDragPointerUp();
       if (committed) setLabelOffset(committed.measurementId, committed.dx, committed.dy);
     }
+    if ($vertexLabelDrag) {
+      const committed = vertexLabelDragPointerUp();
+      if (committed) setVertexLabelOffset(committed.measurementId, committed.vertexIndex, committed.dx, committed.dy);
+    }
   }
 
   /** PO request (draggable polygon labels) — MeasurementChip's `onDragStart` for a Polygon chip.
@@ -713,10 +743,15 @@
   }
 
   function onWindowMouseMove(event: MouseEvent): void {
-    if (!$labelDrag) return;
-    const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === $labelDrag!.measurementId);
-    if (!measurement || measurement.shape.type !== 'polygon') return;
-    labelDragPointerMove(event.clientX, event.clientY, $viewport.scale, measurement.shape.vertices);
+    if ($labelDrag) {
+      const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === $labelDrag!.measurementId);
+      if (measurement && measurement.shape.type === 'polygon') {
+        labelDragPointerMove(event.clientX, event.clientY, $viewport.scale, measurement.shape.vertices);
+      }
+    }
+    if ($vertexLabelDrag) {
+      vertexLabelDragPointerMove(event.clientX, event.clientY, $viewport.scale);
+    }
   }
 
   // 15 §14.4 "Двоен клик" — reserved solely for the per-vertex label workflow now (PO follow-up,
@@ -806,6 +841,7 @@
     splitCursor: $splitCursor,
     imageRect: currentImageRect,
     imageDrag: $imageResizeDrag,
+    vertexLabelDrag: $vertexLabelDrag,
   };
   $: if (ctx && renderSignal) redraw();
   // Same "assignment declares the dependency" trick as renderSignal above, kept separate since
@@ -821,6 +857,7 @@
   $: if ($activeTool !== null && $vertexDrag) cancelDrag();
   $: if ($activeTool !== null && $splittingId) cancelSplit();
   $: if ($activeTool !== null && $labelDrag) cancelLabelDrag();
+  $: if ($activeTool !== null && $vertexLabelDrag) cancelVertexLabelDrag();
 
   // 15 §5 F7 step 3 — live dual-area ghost labels, one per resulting child, once the split line
   // crosses the parent boundary exactly twice (canSplit). Recomputed here (not read from
@@ -989,6 +1026,11 @@
   // entry, positioned at that same index's handle point (resizeHandlePoints, sceneRenderer.ts —
   // the exact same position `drawVertexHandles` draws a dot for) so a label always tracks its
   // vertex through edits/resizes/moves without needing its own cached coordinates.
+  //
+  // Grilling session 2026-11-18 — extended with drag-to-reposition and a 1-10 font-size level.
+  // `offset` resolves the same way chips' own centroid+labelOffset already does: the live drag
+  // preview (vertexLabelDrag) overrides the persisted offset while actively dragging *this*
+  // label, otherwise the persisted offset (if any) applies, else zero (centered on the vertex).
   $: vertexLabelChips = ($activeSurface?.layers.flatMap((layer) => layer.measurements) ?? []).flatMap(
     (measurement) => {
       // item A5 "eye icon = real visibility" — a hidden Measurement's vertex labels stay hidden
@@ -999,11 +1041,61 @@
       return measurement.vertexLabels.flatMap((vertexLabel, index) => {
         const point = points[index];
         if (!vertexLabel || !point) return [];
-        const { x, y } = worldToScreen($viewport, point);
-        return [{ key: `${measurement.id}-${index}`, x, y, text: vertexLabel.text, color: vertexLabel.color }];
+        const liveDrag =
+          $vertexLabelDrag && $vertexLabelDrag.measurementId === measurement.id && $vertexLabelDrag.vertexIndex === index
+            ? $vertexLabelDrag
+            : null;
+        const offset = liveDrag ?? vertexLabel.offset ?? { dx: 0, dy: 0 };
+        const worldPoint = { x: point.x + offset.dx, y: point.y + offset.dy };
+        const { x, y } = worldToScreen($viewport, worldPoint);
+        return [
+          {
+            key: `${measurement.id}-${index}`,
+            measurementId: measurement.id,
+            vertexIndex: index,
+            vertexPoint: point,
+            x,
+            y,
+            text: vertexLabel.text,
+            color: vertexLabel.color,
+            fontSizePx: vertexLabelFontSizePx(vertexLabel.fontSize),
+            currentOffset: vertexLabel.offset,
+          },
+        ];
       });
     },
   );
+
+  interface VertexLabelChipData {
+    readonly key: string;
+    readonly measurementId: string;
+    readonly vertexIndex: number;
+    readonly vertexPoint: Point;
+    readonly x: number;
+    readonly y: number;
+    readonly text: string;
+    readonly color: string;
+    readonly fontSizePx: number;
+    readonly currentOffset: { readonly dx: number; readonly dy: number } | undefined;
+  }
+
+  // Same neutral-state gating as MeasurementChip's own `chipsInteractive` (grilling 2026-11-18,
+  // Q5) — dragging/selecting a vertex label needs no special mode of its own, just the app not
+  // being mid-draw/calibrate/split/view-only. Deliberately NOT gated on `measurement.locked`
+  // (grilling Q10): position/size are cosmetic annotations, the same bucket as recolor, not
+  // geometry — entities.ts's own `locked` doc already draws that line.
+  function onVertexLabelSelect(chip: VertexLabelChipData, event: MouseEvent): void {
+    if (event.shiftKey) toggleMeasurementSelection(chip.measurementId);
+    else selectMeasurement(chip.measurementId);
+  }
+
+  function onVertexLabelDragStart(chip: VertexLabelChipData, event: MouseEvent): void {
+    vertexLabelDragPointerDown(chip.measurementId, chip.vertexIndex, event.clientX, event.clientY, chip.currentOffset);
+  }
+
+  function onVertexLabelReset(chip: VertexLabelChipData): void {
+    setVertexLabelOffset(chip.measurementId, chip.vertexIndex, 0, 0);
+  }
 
   // PO request (per-edge length labels, grilling session 2026-11-17) — one DOM label per Polygon
   // edge, same "DOM projection of Shape/Measurement data, never drawn on the canvas" split as
@@ -1131,13 +1223,17 @@
     />
   {/each}
   {#each vertexLabelChips as label (label.key)}
-    <div
-      class="vertex-label-chip"
-      style="left: {label.x}px; top: {label.y}px; color: {label.color};"
-      data-testid="vertex-label-chip"
-    >
-      {label.text}
-    </div>
+    <VertexLabelChip
+      text={label.text}
+      color={label.color}
+      fontSizePx={label.fontSizePx}
+      x={label.x}
+      y={label.y}
+      interactive={chipsInteractive}
+      onSelect={(e) => onVertexLabelSelect(label, e)}
+      onDragStart={(e) => onVertexLabelDragStart(label, e)}
+      onReset={() => onVertexLabelReset(label)}
+    />
   {/each}
   {#each edgeLengthLabels as label (label.key)}
     <div
@@ -1265,25 +1361,12 @@
     white-space: nowrap;
   }
 
-  .vertex-label-chip {
-    position: absolute;
-    transform: translate(8px, -8px);
-    pointer-events: none;
-    font-size: 12px;
-    font-weight: 700;
-    text-shadow:
-      0 0 3px var(--af-surface-app),
-      0 0 3px var(--af-surface-app),
-      0 0 3px var(--af-surface-app);
-    white-space: nowrap;
-  }
-
   /* PO request (per-edge length labels, grilling session 2026-11-17) — tiny, pale, no background/
      border/box (explicit request, as opposed to MeasurementChip's opaque pill). The text-shadow
-     glow is the same technique .vertex-label-chip above already uses for legibility over an
-     arbitrary photo/map background, just applied to a muted color instead of a bold one. Purely
-     decorative: no onClick/onDragStart, `pointer-events: none` so it never intercepts a click
-     meant for the shape or chip beneath it. */
+     glow is the same technique VertexLabelChip.svelte uses for legibility over an arbitrary
+     photo/map background, just applied to a muted color instead of a bold one. Purely decorative:
+     no onClick/onDragStart, `pointer-events: none` so it never intercepts a click meant for the
+     shape or chip beneath it. */
   .edge-length-label {
     position: absolute;
     pointer-events: none;

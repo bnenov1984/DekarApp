@@ -13,6 +13,8 @@ import { setMeasurementLockedCommand } from '../../application/commands/setMeasu
 import { setVertexLabelCommand } from '../../application/commands/setVertexLabel.js';
 import { setManualAreaCommand } from '../../application/commands/setManualArea.js';
 import { setLabelOffsetCommand } from '../../application/commands/setLabelOffset.js';
+import { setVertexLabelOffsetCommand } from '../../application/commands/setVertexLabelOffset.js';
+import { setVertexLabelFontSizeCommand } from '../../application/commands/setVertexLabelFontSize.js';
 import { viewOnly } from './panelLayoutSession.js';
 
 // The first UI -> Application integration point (21 §3 dependency direction: allowed downward
@@ -310,6 +312,22 @@ export function setLabelOffset(measurementId: MeasurementId, dx: number, dy: num
   executeCommand((surface) => setLabelOffsetCommand({ surface, measurementId, dx, dy }));
 }
 
+/** PO request (vertex label drag, grilling session 2026-11-18) — persists where one vertex's
+ * label was dragged to (Surface-space delta from that vertex's own point, same "delta, not
+ * absolute position" convention as setLabelOffset above). Called only once a drag actually moved
+ * and the radius clamp (vertexLabelDragSession.ts) has already been applied; double-click-to-reset
+ * (CanvasStage.svelte) calls this too, with dx=dy=0. */
+export function setVertexLabelOffset(measurementId: MeasurementId, vertexIndex: number, dx: number, dy: number): void {
+  executeCommand((surface) => setVertexLabelOffsetCommand({ surface, measurementId, vertexIndex, dx, dy }));
+}
+
+/** PO request (vertex label size, grilling session 2026-11-18) — `fontSize` is a 1-10 level
+ * (vertexLabelFontSize.ts maps it to px at render time), applied live as the Properties panel's
+ * slider moves, same "no Save button" convention as every other edit here. */
+export function setVertexLabelFontSize(measurementId: MeasurementId, vertexIndex: number, fontSize: number): void {
+  executeCommand((surface) => setVertexLabelFontSizeCommand({ surface, measurementId, vertexIndex, fontSize }));
+}
+
 /** PD-012 D6 — "no Save button": every settled mutation (execute/undo/redo) persists
  * fire-and-forget, never blocking the UI thread. Failures surface non-blockingly via
  * `persistence.ts`'s `storageErrorMessage`, not a thrown error back into caller code. */
@@ -348,6 +366,8 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       setImageLocked,
       setMeasurementLocked,
       setVertexLabel,
+      setVertexLabelOffset,
+      setVertexLabelFontSize,
       setManualArea,
       setLabelOffset,
       get,
