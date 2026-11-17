@@ -58,7 +58,7 @@
 
 <div class="home">
   <div class="hero">
-    <p class="eyebrow">AreaFlow</p>
+    <p class="eyebrow">Dekar</p>
     <h1>Measure anything.</h1>
   </div>
 
