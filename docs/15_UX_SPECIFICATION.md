@@ -403,13 +403,17 @@ Selection is a direct canvas interaction and is not represented as a toolbar mod
 ## §14. Interaction Patterns
 
 1. **Draw → auto-select**: завършена фигура се самоселектира и връща в неутралното състояние на взаимодействие. `⇧`+инструмент задържа инструмента за серийно чертане (roofing/landscaping нужда).
-2. **Live computation**: стойността тече до курсора по време на чертане; сегментните дължини се показват на всяка страна при чертане и селекция.
+2. **Live computation**: стойността тече до курсора по време на чертане. Сегментните дължини (PD-027) не са gate-нати по селекция, а по един глобален StatusBar превключвател ("edges on/off", подразбиране изключен) — показват се на всяка страна на всеки Polygon, включително все още недовършен draft, докато превключвателят е включен; по-ранна версия на този ред описваше selection-gated показване, което не отговаря на реализираното.
 3. **Snap (Drawing Engine)**: към върхове, ръбове, ъгли 0/45/90°, и към mapping grid при карти. AutoCAD-стил визуални маркери (P8): различен глиф за връх/ръб/ъгъл. `⌥` временно изключва.
 4. **Single click selects the object and immediately exposes all editing affordances appropriate for its state.**
    - unlocked → handles
    - locked → outline only
 
-   Double click is reserved exclusively for the vertex-label workflow.
+   Double click is reserved exclusively for the vertex-label workflow — double-clicking a
+   vertex *handle* activates text editing for that vertex's label (unchanged); double-clicking
+   an already-rendered vertex *label* itself resets its dragged-away position back to centered
+   on the vertex (PD-028) — two different targets, same "double-click = this workflow's own
+   thing" reservation, never colliding since one requires vertex-edit mode and the other doesn't.
 5. **Директна манипулация преди панели**: влачене на връх, на ръб (добавя връх), на фигура; ротация през дръжка. Панелът е за точност, платното — за скорост. Locked objects remain inspectable but not editable.
 6. **Контекстно меню** (десен клик/long-press): второстепенни действия за селекцията (duplicate, lock, група, изпращане към extension). Никога единствен път към функция (анти-P16).
 7. **Undo/Redo е глобален и безусловен** — включва календриране, AI accept, изтривания. "No unnecessary dialogs" е възможно само защото undo покрива грешките: диалозите за потвърждение се заменят с toast + Undo бутон (8 сек).
