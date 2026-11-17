@@ -22,6 +22,8 @@ import { resizeRectangleDimensionsCommand } from './resizeRectangleDimensions.js
 import { resizeCircleToRadiusCommand } from './resizeCircleToRadius.js';
 import { setMeasurementLockedCommand } from './setMeasurementLocked.js';
 import { setLabelOffsetCommand } from './setLabelOffset.js';
+import { setVertexLabelOffsetCommand } from './setVertexLabelOffset.js';
+import { setVertexLabelFontSizeCommand } from './setVertexLabelFontSize.js';
 import { setManualAreaCommand } from './setManualArea.js';
 import { makeSquareMeasurement, makeTestSurface } from './testFixtures.js';
 import { childrenOf, findMeasurement } from '../surfaceOps.js';
@@ -577,6 +579,86 @@ describe('SetVertexLabel — round trip', () => {
   });
 });
 
+describe('SetVertexLabelOffset — round trip', () => {
+  function withLabel(): Surface {
+    return makeTestSurface([{ ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0' }] }]);
+  }
+
+  it('sets the offset on the vertex label at an index; undo/redo exact', () => {
+    const initial = withLabel();
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setVertexLabelOffsetCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, dx: 6, dy: -4 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([{ text: 'A', color: '#1565C0', offset: { dx: 6, dy: -4 } }]);
+    expect(findMeasurement(initial, 'm1')!.measurement.vertexLabels).toEqual([{ text: 'A', color: '#1565C0' }]);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  // Regression — the exact footgun a dedicated command exists to avoid: moving a label must never
+  // clobber its own text/color/fontSize.
+  it('preserves the label text, color and fontSize — only the offset changes', () => {
+    const initial = makeTestSurface([
+      { ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0', fontSize: 8 }] },
+    ]);
+    const mutated = setVertexLabelOffsetCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, dx: 3, dy: 3 }).do();
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([
+      { text: 'A', color: '#1565C0', fontSize: 8, offset: { dx: 3, dy: 3 } },
+    ]);
+  });
+
+  it('overwrites a previous offset rather than accumulating it', () => {
+    const initial = makeTestSurface([
+      { ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0', offset: { dx: 1, dy: 1 } }] },
+    ]);
+    const mutated = setVertexLabelOffsetCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, dx: 9, dy: 9 }).do();
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels![0]).toEqual({ text: 'A', color: '#1565C0', offset: { dx: 9, dy: 9 } });
+  });
+
+  it('is a no-op when the vertex has no label yet (defensive — the UI never starts a drag here)', () => {
+    const initial = makeTestSurface([makeSquareMeasurement('m1')]);
+    const mutated = setVertexLabelOffsetCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, dx: 9, dy: 9 }).do();
+    expect(mutated).toEqual(initial);
+  });
+
+  it('throws for a measurement that does not exist', () => {
+    const initial = makeTestSurface([]);
+    expect(() => setVertexLabelOffsetCommand({ surface: initial, measurementId: 'missing', vertexIndex: 0, dx: 1, dy: 1 })).toThrow();
+  });
+});
+
+describe('SetVertexLabelFontSize — round trip', () => {
+  it('sets the fontSize on the vertex label at an index; undo/redo exact', () => {
+    const initial = makeTestSurface([{ ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0' }] }]);
+    const stack = new CommandStack();
+
+    const mutated = stack.execute(setVertexLabelFontSizeCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, fontSize: 9 }));
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([{ text: 'A', color: '#1565C0', fontSize: 9 }]);
+    expect(findMeasurement(initial, 'm1')!.measurement.vertexLabels).toEqual([{ text: 'A', color: '#1565C0' }]);
+
+    expect(stack.undo<Surface>()).toEqual(initial);
+    expect(stack.redo<Surface>()).toEqual(mutated);
+  });
+
+  // Regression — the same footgun as SetVertexLabelOffset's own: resizing a label's text must
+  // never clobber its own offset.
+  it('preserves the label text, color and offset — only the fontSize changes', () => {
+    const initial = makeTestSurface([
+      { ...makeSquareMeasurement('m1'), vertexLabels: [{ text: 'A', color: '#1565C0', offset: { dx: 3, dy: 3 } }] },
+    ]);
+    const mutated = setVertexLabelFontSizeCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, fontSize: 4 }).do();
+    expect(findMeasurement(mutated, 'm1')!.measurement.vertexLabels).toEqual([
+      { text: 'A', color: '#1565C0', offset: { dx: 3, dy: 3 }, fontSize: 4 },
+    ]);
+  });
+
+  it('throws for a measurement that does not exist', () => {
+    const initial = makeTestSurface([]);
+    expect(() => setVertexLabelFontSizeCommand({ surface: initial, measurementId: 'missing', vertexIndex: 0, fontSize: 5 })).toThrow();
+  });
+});
+
 describe('ResizeRectangleDimensions — round trip', () => {
   const rectMeasurement: Measurement = {
     id: 'm1',
@@ -1029,6 +1111,8 @@ describe('Locked measurement refuses geometry-mutating commands', () => {
     const initial = makeTestSurface([lockedSquare]);
     expect(() => updateIdentityCommand({ surface: initial, measurementId: 'm1', identity: { ...lockedSquare.identity, name: 'Renamed' } })).not.toThrow();
     expect(() => setVertexLabelCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, label: { text: 'A', color: '#000' } })).not.toThrow();
+    expect(() => setVertexLabelOffsetCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, dx: 5, dy: 5 })).not.toThrow();
+    expect(() => setVertexLabelFontSizeCommand({ surface: initial, measurementId: 'm1', vertexIndex: 0, fontSize: 5 })).not.toThrow();
     expect(() =>
       duplicateMeasurementsCommand({ surface: initial, measurementIds: ['m1'], newMeasurementIds: ['m1-copy'], dx: 5, dy: 5 }),
     ).not.toThrow();

@@ -35,6 +35,20 @@ export interface MeasurementIdentity {
 export interface VertexLabel {
   readonly text: string;
   readonly color: string;
+  /** PO request (vertex label size/drag, grilling 2026-11-18) — a 1-10 discrete level, mapped to
+   * a px font-size at render time (ui/measurement/vertexLabelFontSize.ts's
+   * `vertexLabelFontSizePx`) rather than storing px directly, so the mapping can be retuned later
+   * without migrating stored data. `undefined` = the pre-existing fixed look (12px) — every label
+   * created before this field existed renders exactly as it did before. */
+  readonly fontSize?: number;
+  /** Surface-space delta from the vertex's own handle point — same "delta, not an absolute
+   * position" convention as `Measurement.labelOffset` below, for the same reason (tracks the
+   * vertex automatically through any edit that moves it). `undefined` = centered on the vertex
+   * (unchanged default). Clamped to a fixed on-screen radius by the caller
+   * (`vertexLabelDragSession.ts`) before this is ever set — this field just carries whatever it's
+   * given, the same "validation happens upstream, commands trust their params" split
+   * `setLabelOffset.ts` already documents for the analogous Measurement-level field. */
+  readonly offset?: { readonly dx: number; readonly dy: number };
 }
 
 /** 14 §2.1/§3 — Entity. `parentId` present only for Split children (PD-009); the parent

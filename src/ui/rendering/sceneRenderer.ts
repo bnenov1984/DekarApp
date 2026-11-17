@@ -412,6 +412,25 @@ export function drawMarquee(ctx: CanvasRenderingContext2D, from: Point, to: Poin
   ctx.restore();
 }
 
+/** Grilling session 2026-11-18, Q8 — a faint dashed guide circle marking the vertex-label drag's
+ * radius limit, shown only while a drag is actively in progress (same "ghost/in-progress" visual
+ * language as `drawInProgress`/`drawSplitPreview`/`drawCalibrationLine`, just unfilled since there
+ * is no "candidate shape" here, only a boundary). `center` is the vertex's own fixed point (never
+ * the live-dragged label position) and `radius` is already in Surface-space (the caller divides
+ * the screen-pixel constant by the current zoom scale before calling this, same convention as
+ * `vertexHandleRadius` below). */
+export function drawVertexLabelDragGuide(ctx: CanvasRenderingContext2D, center: Point, radius: number, accentColor: string): void {
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = accentColor;
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** docs/19_IMPORT_EXPORT.md §3 / 15 W3 — the transient calibration reference line. Same ghost
  * visual language as `drawInProgress` (dashed, accent-colored) but never a Measurement preview —
  * this line never reaches `computeMeasurementDisplay`, only `CalibrationService`. */
