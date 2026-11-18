@@ -41,6 +41,8 @@ File/Map source
 
 **Всяка страница е отделна Surface** (решение вече взето в 11 §1.1, потвърдено тук като pipeline детайл): parse на PDF произвежда N Surface entities, всяка със собствен `Calibration = null`. Ако PDF съдържа котиран мащаб (напр. "1:1000" в заглавния блок), **Import Engine не го извлича автоматично в v1** — това би било OCR/parsing способност извън PD-011 обхвата; потребителят календрира ръчно (F2), както при обикновено изображение. PDF рендерът към raster (за canvas показване) е implementation detail на Phase 4 (PDF.js или еквивалент), не архитектурно решение тук.
 
+**Първа реализирана резка (grilling сесия, 2026-11-18): само едностраничен PDF.** Многостраничният path по-горе остава валидният целеви дизайн, но все още не е построен — защото нищо в UI днес не позволява навигация между повече от един Surface в един Project (няма Surface-tab превключвател; `appState.ts`'s `surfaces`/`activeSurfaceId` вече подготвят структурата, но никой компонент не я чете отвъд първия елемент). PDF с повече от 1 страница се отхвърля изрично (`MULTI_PAGE_NOT_SUPPORTED`, назовава броя страници в съобщението) — никога тихо само първата страница. Рендерът е PDF.js (`pdfRender.ts`), 2x база 96 DPI (~192 ефективни) — достатъчно остро за трасиране при zoom, без цената на истинска печатна резолюция. Оригиналният PDF blob се пази (не снимка) — същия "source, не derived bitmap" избор като `image` Surface-ите; декодира се наново при всяко отваряне.
+
 ### 2.3. Map
 
 Не е "import" на файл — Surface се провизира директно през `MapProvider.search`/viewport избор (21 §8.1, 23 §4). Ражда се **вече калибрирана** (гео координати = собствената си истина, 11 §6) — CalibrationBar никога не се появява за Map Surface. Tiles не се персистират (11 §7) — Surface пази `(centerCoordinates, zoom, bounds)`, не растерни данни; при отваряне tiles се дърпат наново през `MapProvider.getTile`.
@@ -104,6 +106,7 @@ Report generation trigger (15 F6)
 |--------|-----------|
 | Неразпознат/повреден файл при import | `Result.fail('UNSUPPORTED_FORMAT' \| 'CORRUPT_FILE')` — не throw; UI показва inline картата на несъстоялата се Surface (15 §16) |
 | PDF с защита с парола | `Result.fail('PASSWORD_PROTECTED')` — извън v1 обхват да се разбива паролата; UI просто съобщава |
+| PDF с повече от 1 страница (grilling 2026-11-18, §2.2 бележка по-горе) | `Result.fail('MULTI_PAGE_NOT_SUPPORTED')`, носи и броя страници — UI назовава точния брой ("This PDF has 12 pages…"), никога не внася само първата мълчаливо |
 | Map provider недостъпен при провизиране | Delegира на `MapProvider` adapter грешка (23 §4/§8), Import Engine не добавя собствена логика отгоре |
 | Export генериране неуспешно (напр. storage пълно за временен файл) | Application-level грешка (23 §8), стига до UI като toast, retry достъпен |
 
@@ -113,6 +116,7 @@ Report generation trigger (15 F6)
 
 - `CalibrationService.fromReferenceLine` — чиста функция, table-driven тестове (известни pixel/real двойки → очаквана Calibration).
 - Import pipeline — integration тест с fake `StorageAdapter`: провизиране на Surface от валиден/невалиден файл, проверка на резултантния Surface state.
+- PDF rendering (`pdfRender.ts`) — pdfjs-dist мокнат на модулно ниво (реален Worker + `<canvas>` 2D context липсват под vitest's default 'node' environment); тества се *decision logic*-ата (single-page accept, multi-page/password/corrupt reject), не реален PDF binary rendering.
 - Export/Report — **INV-11 директен тест** (22 §3 вече го изисква): генерирай Report, редактирай Measurement, потвърди Report snapshot непроменен.
 - PDF multi-page → N Surfaces с независими Calibration слотове (regression срещу случайно споделяне на calibration между страници).
 
