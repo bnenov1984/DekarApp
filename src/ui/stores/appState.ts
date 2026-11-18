@@ -1,10 +1,11 @@
 import { writable, get } from 'svelte/store';
-import type { Project, ProjectId, Surface } from '../../core/domain/entities.js';
+import type { Project, ProjectId, Surface, SurfaceKind } from '../../core/domain/entities.js';
 import type { ProjectSummary } from '../../application/ports/projectRepository.js';
 import { initStudioSession } from './studioSession.js';
 import { projectRepository, surfaceRepository, storageAdapter, persist } from './persistence.js';
 import { imageAssetKey } from '../../application/imageAsset.js';
 import { setBackgroundImage, loadBackgroundImageFor } from './imageAssetSession.js';
+import { renderSinglePagePdf } from '../pdf/pdfRender.js';
 import { resetViewport } from './viewportSession.js';
 
 // 11_INFORMATION_ARCHITECTURE.md §5 Navigation Tree — the app has exactly two screens (Home,
@@ -115,27 +116,17 @@ const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg']);
 
 export type ImportImageError = 'UNSUPPORTED_FORMAT' | 'CORRUPT_FILE';
 
-/** 15 §6 W4 "Import a file" Start affordance (19_IMPORT_EXPORT.md §2.1) — PD-011 v1 scope is
- * PNG/JPG only (PDF/Map are separate, larger slices: multi-Surface-per-file and MapProvider
- * respectively). Returns a Result rather than throwing (19 §6 error taxonomy: UNSUPPORTED_FORMAT/
- * CORRUPT_FILE are expected, not exceptional) — Home.svelte turns a failure into an inline,
- * non-blocking message (15 §16), never a thrown error reaching the caller. */
-export async function importImageProject(file: File): Promise<{ ok: true } | { ok: false; error: ImportImageError }> {
-  if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
-    return { ok: false, error: 'UNSUPPORTED_FORMAT' };
-  }
-
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    return { ok: false, error: 'CORRUPT_FILE' };
-  }
-
+/** Shared by importImageProject/importPdfProject below — everything past "we have a decoded
+ * bitmap and know what kind of Surface this is" is identical between the two formats: same
+ * Surface/Project shape, same "display immediately, persist fire-and-forget" sequencing, same
+ * post-import calibration nudge. `file` is the ORIGINAL blob persisted (never the bitmap) — same
+ * "store the source, derive the display bitmap fresh on load" split loadBackgroundImageFor
+ * already uses for images, now shared by PDF pages too (pdfRender.ts's renderPersistedPdfPage). */
+function commitImportedSurface(kind: SurfaceKind, bitmap: ImageBitmap, file: File): { ok: true } {
   const surfaceId = newId();
   const surface: Surface = {
     id: surfaceId,
-    kind: 'image',
+    kind,
     calibration: null,
     layers: [{ id: newId(), name: 'Default', visible: true, order: 0, measurements: [] }],
   };
@@ -159,6 +150,48 @@ export async function importImageProject(file: File): Promise<{ ok: true } | { o
   });
 
   return { ok: true };
+}
+
+/** 15 §6 W4 "Import a file" Start affordance (19_IMPORT_EXPORT.md §2.1) — PNG/JPG, PD-011's other
+ * v1 image format (PDF: importPdfProject below). Returns a Result rather than throwing (19 §6
+ * error taxonomy: UNSUPPORTED_FORMAT/CORRUPT_FILE are expected, not exceptional) — the caller
+ * turns a failure into an inline, non-blocking message (15 §16), never a thrown error. */
+export async function importImageProject(file: File): Promise<{ ok: true } | { ok: false; error: ImportImageError }> {
+  if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
+    return { ok: false, error: 'UNSUPPORTED_FORMAT' };
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return { ok: false, error: 'CORRUPT_FILE' };
+  }
+
+  return commitImportedSurface('image', bitmap, file);
+}
+
+export type ImportPdfError = 'UNSUPPORTED_FORMAT' | 'CORRUPT_FILE' | 'PASSWORD_PROTECTED' | 'MULTI_PAGE_NOT_SUPPORTED';
+
+/** PO request (PDF import, grilling session 2026-11-18) — PD-011's v1 scope already names PDF;
+ * this is the first slice of it, deliberately narrowed to single-page files (pdfRender.ts's own
+ * header explains why: no Surface-tab-switcher UI exists yet to navigate between more than one
+ * Surface per Project, so a multi-page PDF is rejected rather than silently importing page 1 and
+ * dropping the rest). `pageCount` rides along on a MULTI_PAGE_NOT_SUPPORTED result so the caller
+ * can name the actual count in its message, not just "unsupported." */
+export async function importPdfProject(
+  file: File,
+): Promise<{ ok: true } | { ok: false; error: ImportPdfError; pageCount?: number }> {
+  if (file.type !== 'application/pdf') {
+    return { ok: false, error: 'UNSUPPORTED_FORMAT' };
+  }
+
+  const rendered = await renderSinglePagePdf(file);
+  if (!rendered.ok) {
+    return { ok: false, error: rendered.error, ...(rendered.pageCount !== undefined && { pageCount: rendered.pageCount }) };
+  }
+
+  return commitImportedSurface('pdfPage', rendered.bitmap, file);
 }
 
 /** 15 §6 W4 Recent card click — loads the Project and every Surface it references

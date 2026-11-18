@@ -1,19 +1,26 @@
 <script lang="ts">
   // 15_UX_SPECIFICATION.md §6/W4 — Home: three Start affordances. Map still needs an adapter
   // that doesn't exist yet (MapProvider — P-05 territory), shown honestly as not-yet-available.
-  // Import (PNG/JPG, PD-011 v1 scope) is wired to appState.ts's importImageProject; PDF/Map
-  // import are separate, larger slices (multi-Surface-per-file / MapProvider respectively), not
-  // this one. Recent (15 W4) is live as of the Persistence slice — real ProjectRepository.list()
-  // cards, "recognized by its result" (preview area, not a thumbnail — no render-to-static-image
-  // pipeline exists, W4's literal preview thumbnails are a later slice).
+  // Import (PNG/JPG/PDF, PD-011 v1 scope) is wired to appState.ts's importImageProject/
+  // importPdfProject; Map import is a separate, larger slice (MapProvider), not this one. PDF is
+  // single-page only for now (grilling session 2026-11-18 — see pdfRender.ts). Recent (15 W4) is
+  // live as of the Persistence slice — real ProjectRepository.list() cards, "recognized by its
+  // result" (preview area, not a thumbnail — no render-to-static-image pipeline exists, W4's
+  // literal preview thumbnails are a later slice).
+  //
+  // NB: Home is currently unreachable from the app's default flow (appState.ts always opens
+  // Studio directly) — kept in sync anyway since it's cheap-to-reverse scaffolding, not dead code
+  // to ignore (see 15_UX_SPECIFICATION §2.1's own note on this).
   import { onMount } from 'svelte';
   import {
     startBlankProject,
     loadProject,
     importImageProject,
+    importPdfProject,
     recentProjects,
     refreshRecentProjects,
     type ImportImageError,
+    type ImportPdfError,
   } from '../stores/appState.js';
   import Icon from '../components/Icon.svelte';
   import type { Unit } from '../../core/domain/types.js';
@@ -33,15 +40,20 @@
   }
 
   let fileInput: HTMLInputElement;
-  let importError: ImportImageError | null = null;
+  let importError: ImportImageError | ImportPdfError | null = null;
+  let importErrorDetail: string | null = null;
+  let importing = false;
 
-  const IMPORT_ERROR_MESSAGES: Record<ImportImageError, string> = {
-    UNSUPPORTED_FORMAT: 'Unsupported file — only PNG and JPG images can be imported yet.',
-    CORRUPT_FILE: "That file couldn't be read as an image.",
+  const IMPORT_ERROR_MESSAGES: Record<ImportImageError | ImportPdfError, string> = {
+    UNSUPPORTED_FORMAT: 'Unsupported file — only PNG, JPG, or PDF can be imported yet.',
+    CORRUPT_FILE: "That file couldn't be read.",
+    PASSWORD_PROTECTED: "That PDF is password-protected — remove the password and try again.",
+    MULTI_PAGE_NOT_SUPPORTED: 'Only single-page PDFs can be imported right now.',
   };
 
   function openFilePicker(): void {
     importError = null;
+    importErrorDetail = null;
     fileInput.click();
   }
 
@@ -51,8 +63,17 @@
     input.value = ''; // allow re-choosing the same file after a failed attempt
     if (!file) return;
 
-    const result = await importImageProject(file);
-    importError = result.ok ? null : result.error;
+    importing = true;
+    try {
+      const result = file.type === 'application/pdf' ? await importPdfProject(file) : await importImageProject(file);
+      importError = result.ok ? null : result.error;
+      importErrorDetail =
+        !result.ok && result.error === 'MULTI_PAGE_NOT_SUPPORTED' && 'pageCount' in result
+          ? `This PDF has ${result.pageCount} pages — only single-page PDFs can be imported right now.`
+          : null;
+    } finally {
+      importing = false;
+    }
   }
 </script>
 
@@ -75,14 +96,14 @@
       <span class="desc">Coming soon</span>
     </button>
 
-    <button class="card" on:click={openFilePicker}>
+    <button class="card" class:disabled={importing} disabled={importing} on:click={openFilePicker}>
       <span class="icon"><Icon name="image" size={28} /></span>
-      <span class="title">Import a file</span>
-      <span class="desc">PNG or JPG</span>
+      <span class="title">{importing ? 'Importing…' : 'Import a file'}</span>
+      <span class="desc">PNG, JPG, or PDF</span>
     </button>
     <input
       type="file"
-      accept="image/png,image/jpeg"
+      accept="image/png,image/jpeg,application/pdf"
       bind:this={fileInput}
       on:change={onFileChosen}
       class="visually-hidden"
@@ -91,7 +112,7 @@
   </div>
 
   {#if importError}
-    <p class="import-error" data-testid="import-error">{IMPORT_ERROR_MESSAGES[importError]}</p>
+    <p class="import-error" data-testid="import-error">{importErrorDetail ?? IMPORT_ERROR_MESSAGES[importError]}</p>
   {/if}
 
   {#if $recentProjects.length > 0}

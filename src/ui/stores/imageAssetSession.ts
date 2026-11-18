@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import type { Surface } from '../../core/domain/entities.js';
 import { imageAssetKey } from '../../application/imageAsset.js';
 import { storageAdapter } from './persistence.js';
+import { renderPersistedPdfPage } from '../pdf/pdfRender.js';
 
 // Surface entities never carry a blob/bitmap reference themselves (imageAsset.ts's header
 // comment: the source blob is an Adapters-layer concern, not Core domain data) — this store is
@@ -29,10 +30,11 @@ export function setBackgroundImage(bitmap: ImageBitmap | null): void {
 
 /** Storage-backed path — called whenever Studio opens a Surface that wasn't just imported in this
  * same session (Home "Recent" reload, appState.ts's loadProject). No-op (clears to null) for
- * every Surface kind except 'image' today; Map/PDF backgrounds are a later slice
- * (19_IMPORT_EXPORT.md §2.2/§2.3). */
+ * every Surface kind except 'image'/'pdfPage' today; Map backgrounds are a later slice
+ * (19_IMPORT_EXPORT.md §2.3 — born-calibrated, tiles never persisted, so there's no stored blob
+ * to decode in the first place). */
 export async function loadBackgroundImageFor(surface: Surface): Promise<void> {
-  if (surface.kind !== 'image') {
+  if (surface.kind !== 'image' && surface.kind !== 'pdfPage') {
     setBitmap(null);
     return;
   }
@@ -41,5 +43,10 @@ export async function loadBackgroundImageFor(surface: Surface): Promise<void> {
     setBitmap(null);
     return;
   }
-  setBitmap(await createImageBitmap(blob));
+  // 'pdfPage' persists the original PDF blob, never a pre-rendered snapshot (appState.ts's
+  // commitImportedSurface) — re-decoded fresh here, same "store the source, derive the display
+  // bitmap on load" split 'image' already uses, just through pdfRender.ts's renderer instead of
+  // createImageBitmap directly.
+  const bitmap = surface.kind === 'pdfPage' ? await renderPersistedPdfPage(blob) : await createImageBitmap(blob);
+  setBitmap(bitmap);
 }
