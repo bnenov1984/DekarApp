@@ -2,21 +2,33 @@
   // 15 §2.2 (Photoshop layout, 2026-10-11) — Import is a file action, not a drawing tool, so it
   // lives in the top bar beside Export rather than in the tool bar. Reuses `importImageProject`
   // verbatim — same MIME validation / decode / Result-error contract as before the move.
+  //
+  // PO request (PDF import, grilling session 2026-11-18) — PDF joins PNG/JPG on this same button
+  // rather than a separate entry point (this app's own "one minimal affordance" convention,
+  // 15_UX_SPECIFICATION §1); dispatch on `file.type` to whichever import function actually knows
+  // the format. `importing` is a minimal "don't look frozen" indicator (grilling Q9) — not the
+  // staged/cancelable design 15 §17 describes, which was never built even for images; a PDF page
+  // render is the first import path where a multi-second wait is actually likely.
   import { calibrating } from '../stores/calibrationSession.js';
   import { splittingId } from '../stores/splitSession.js';
-  import { importImageProject, type ImportImageError } from '../stores/appState.js';
+  import { importImageProject, importPdfProject, type ImportImageError, type ImportPdfError } from '../stores/appState.js';
   import Icon from './Icon.svelte';
 
   let fileInput: HTMLInputElement;
-  let importError: ImportImageError | null = null;
+  let importError: ImportImageError | ImportPdfError | null = null;
+  let importErrorDetail: string | null = null; // the one case a static message can't cover: "this PDF has N pages"
+  let importing = false;
 
-  const IMPORT_ERROR_MESSAGES: Record<ImportImageError, string> = {
-    UNSUPPORTED_FORMAT: 'Unsupported file — only PNG and JPG images can be imported yet.',
-    CORRUPT_FILE: "That file couldn't be read as an image.",
+  const IMPORT_ERROR_MESSAGES: Record<ImportImageError | ImportPdfError, string> = {
+    UNSUPPORTED_FORMAT: 'Unsupported file — only PNG, JPG, or PDF can be imported yet.',
+    CORRUPT_FILE: "That file couldn't be read.",
+    PASSWORD_PROTECTED: "That PDF is password-protected — remove the password and try again.",
+    MULTI_PAGE_NOT_SUPPORTED: 'Only single-page PDFs can be imported right now.',
   };
 
   function openFilePicker(): void {
     importError = null;
+    importErrorDetail = null;
     fileInput.click();
   }
 
@@ -26,8 +38,17 @@
     input.value = ''; // allow re-choosing the same file after a failed attempt
     if (!file) return;
 
-    const result = await importImageProject(file);
-    importError = result.ok ? null : result.error;
+    importing = true;
+    try {
+      const result = file.type === 'application/pdf' ? await importPdfProject(file) : await importImageProject(file);
+      importError = result.ok ? null : result.error;
+      importErrorDetail =
+        !result.ok && result.error === 'MULTI_PAGE_NOT_SUPPORTED' && 'pageCount' in result
+          ? `This PDF has ${result.pageCount} pages — only single-page PDFs can be imported right now.`
+          : null;
+    } finally {
+      importing = false;
+    }
   }
 </script>
 
@@ -35,24 +56,26 @@
   <button
     type="button"
     class="import-button"
-    title="Import a PNG or JPG"
-    disabled={$calibrating || !!$splittingId}
+    title="Import a PNG, JPG, or PDF"
+    disabled={$calibrating || !!$splittingId || importing}
     data-testid="topbar-import"
     on:click={openFilePicker}
   >
     <Icon name="image" size={15} />
-    Import
+    {importing ? 'Importing…' : 'Import'}
   </button>
   <input
     type="file"
-    accept="image/png,image/jpeg"
+    accept="image/png,image/jpeg,application/pdf"
     bind:this={fileInput}
     on:change={onFileChosen}
     class="visually-hidden"
     data-testid="topbar-import-input"
   />
   {#if importError}
-    <p class="import-error" role="alert" data-testid="topbar-import-error">{IMPORT_ERROR_MESSAGES[importError]}</p>
+    <p class="import-error" role="alert" data-testid="topbar-import-error">
+      {importErrorDetail ?? IMPORT_ERROR_MESSAGES[importError]}
+    </p>
   {/if}
 </div>
 
