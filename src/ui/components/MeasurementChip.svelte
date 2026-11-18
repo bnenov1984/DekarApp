@@ -20,10 +20,22 @@
   export let selected: boolean;
   export let interactive = false;
   // PO request (draggable polygon labels) — Polygon chips only (CanvasStage.svelte decides this
-  // per-chip); when true, a mousedown that doesn't turn into a real drag still behaves exactly
+  // per-chip); when true, a pointerdown that doesn't turn into a real drag still behaves exactly
   // like today (onSelect still fires from the native `click` event below, unchanged).
   export let draggable = false;
-  export let onDragStart: (event: MouseEvent) => void = () => {};
+  export let onDragStart: (event: PointerEvent) => void = () => {};
+  // Bug fix (user report, 2026-11-18) — drag tracking moved from window-level mousemove/mouseup
+  // to Pointer Events + setPointerCapture (same mechanism RightColumn.svelte's panel-resize
+  // divider already uses), onto THIS element rather than window: a plain mouse-event drag only
+  // ever receives its final mouseup if the cursor is still over the browser viewport when the
+  // button is released, so a fast drag ending outside the window silently dropped it, leaving the
+  // chip stuck following a cursor that had already stopped sending events — nothing then listened
+  // for a missed mouseup, so nothing ever recovered. Pointer capture routes every subsequent
+  // pointermove/pointerup (even pointercancel) to the capturing element regardless of where the
+  // cursor physically is, so the drag is always told when it ends.
+  export let onDragMove: (event: PointerEvent) => void = () => {};
+  export let onDragEnd: (event: PointerEvent) => void = () => {};
+  export let onDragCancel: () => void = () => {};
   // PO follow-up (UX review, item A13 "multi-select") — the click event itself is now passed
   // through so the caller (CanvasStage.svelte) can check `event.shiftKey` and toggle this chip's
   // measurement in/out of a multi-selection instead of always replacing the whole selection.
@@ -32,6 +44,28 @@
   // PO follow-up (UX review, item A14 "no context menus") — right-click the chip, same as
   // right-clicking the shape on canvas (D8: every canvas gesture has a chip/list counterpart).
   export let onContextMenu: (event: MouseEvent) => void = () => {};
+
+  // Bug fix (user report, 2026-11-18) — `preventDefault` on pointerdown is what actually stops
+  // the browser from starting its own native text-selection drag here; without it, a
+  // press-and-move gesture over this chip's text could select that text (and, since a vertex
+  // label often sits close to its polygon's own chip, sweep the selection across both at once).
+  // `user-select: none` below is the second, belt-and-suspenders layer for the same problem.
+  function onPointerDown(event: PointerEvent): void {
+    if (!interactive || !draggable) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    onDragStart(event);
+  }
+
+  function onPointerUp(event: PointerEvent): void {
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+    onDragEnd(event);
+  }
+
+  function onPointerCancel(event: PointerEvent): void {
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+    onDragCancel();
+  }
 
   let editing = false;
   let nameDraft = '';
@@ -86,7 +120,10 @@
   on:click|stopPropagation={(e) => interactive && onSelect(e)}
   on:dblclick|stopPropagation={startEditing}
   on:contextmenu|preventDefault|stopPropagation={(e) => interactive && onContextMenu(e)}
-  on:mousedown|stopPropagation={(e) => interactive && draggable && onDragStart(e)}
+  on:pointerdown|stopPropagation={onPointerDown}
+  on:pointermove|stopPropagation={(e) => onDragMove(e)}
+  on:pointerup|stopPropagation={onPointerUp}
+  on:pointercancel|stopPropagation={onPointerCancel}
 >
   {#if editing}
     <input
@@ -123,6 +160,10 @@
     pointer-events: none;
     white-space: nowrap;
     font-family: var(--af-font-ui);
+    /* Bug fix (user report, 2026-11-18) — belt-and-suspenders alongside pointerdown's own
+       preventDefault above: a press-and-drag gesture must never fall back to selecting this
+       chip's own text. .name-input below opts back in, since renaming still needs it. */
+    user-select: none;
   }
 
   .chip.interactive {
@@ -146,6 +187,7 @@
   }
 
   .name-input {
+    user-select: text; /* overrides .chip's own user-select: none — renaming needs normal text editing */
     font-family: inherit;
     font-size: 10.5px;
     font-weight: 600;
