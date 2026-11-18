@@ -19,11 +19,41 @@
   // into a drag selects the parent Measurement, same as clicking the shape/its MeasurementChip
   // already does — leaving it a dead click would read as a bug, not a deliberate no-op.
   export let onSelect: (event: MouseEvent) => void = () => {};
-  export let onDragStart: (event: MouseEvent) => void = () => {};
+  export let onDragStart: (event: PointerEvent) => void = () => {};
+  // Bug fix (user report, 2026-11-18) — same fix as MeasurementChip.svelte's own drag: Pointer
+  // Events + setPointerCapture on this element (not window-level mousemove/mouseup) so a drag
+  // that ends with the cursor outside the browser viewport still reliably delivers its final
+  // pointerup/pointercancel here, instead of leaving the label stuck following a cursor that
+  // stopped sending events. See that file's own comment for the full explanation.
+  export let onDragMove: (event: PointerEvent) => void = () => {};
+  export let onDragEnd: (event: PointerEvent) => void = () => {};
+  export let onDragCancel: () => void = () => {};
   /** Grilling 2026-11-18, Q7 — double-click resets this label's offset back to centered-on-the-
    * vertex, the same "double-click returns to automatic" escape hatch the Properties panel's own
    * Layers/Properties divider already uses. */
   export let onReset: () => void = () => {};
+
+  // Bug fix (user report, 2026-11-18) — preventDefault on pointerdown stops the browser's own
+  // native text-selection drag from starting here; without it, dragging this label could select
+  // its own text and, since it often sits close to its polygon's MeasurementChip, sweep the
+  // selection across both at once. `user-select: none` below is the second layer for the same
+  // problem.
+  function onPointerDown(event: PointerEvent): void {
+    if (!interactive) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    onDragStart(event);
+  }
+
+  function onPointerUp(event: PointerEvent): void {
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+    onDragEnd(event);
+  }
+
+  function onPointerCancel(event: PointerEvent): void {
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+    onDragCancel();
+  }
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
@@ -36,7 +66,10 @@
   data-testid="vertex-label-chip"
   on:click|stopPropagation={(e) => interactive && onSelect(e)}
   on:dblclick|stopPropagation={() => interactive && onReset()}
-  on:mousedown|stopPropagation={(e) => interactive && onDragStart(e)}
+  on:pointerdown|stopPropagation={onPointerDown}
+  on:pointermove|stopPropagation={(e) => onDragMove(e)}
+  on:pointerup|stopPropagation={onPointerUp}
+  on:pointercancel|stopPropagation={onPointerCancel}
 >
   {text}
 </div>
@@ -52,6 +85,8 @@
       0 0 3px var(--af-surface-app),
       0 0 3px var(--af-surface-app);
     white-space: nowrap;
+    /* Bug fix (user report, 2026-11-18) — see MeasurementChip.svelte's identical rule for why. */
+    user-select: none;
   }
 
   .vertex-label-chip.interactive {

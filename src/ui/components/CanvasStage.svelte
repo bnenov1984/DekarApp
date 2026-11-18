@@ -321,7 +321,7 @@
     // Grilling session 2026-11-18, Q8 — the vertex-label drag's radius boundary, shown only while
     // a drag is actually in progress. Centered on the vertex's own *current* point (resolved
     // fresh here, not cached from drag-start), same "never checked against stale geometry"
-    // discipline onWindowMouseMove already follows for the polygon-label drag above it.
+    // discipline onVertexLabelChipDragMove already follows for the drag itself.
     if ($vertexLabelDrag) {
       const dragging = surface.layers
         .flatMap((l) => l.measurements)
@@ -722,36 +722,57 @@
       pendingShapeDrag = null;
     }
     if ($imageResizeDrag) imageResizePointerUp();
-    if ($labelDrag) {
-      const committed = labelDragPointerUp();
-      if (committed) setLabelOffset(committed.measurementId, committed.dx, committed.dy);
-    }
-    if ($vertexLabelDrag) {
-      const committed = vertexLabelDragPointerUp();
-      if (committed) setVertexLabelOffset(committed.measurementId, committed.vertexIndex, committed.dx, committed.dy);
-    }
   }
 
   /** PO request (draggable polygon labels) — MeasurementChip's `onDragStart` for a Polygon chip.
    * `chip.centroid` is already known (the same value the chip was positioned with); the
-   * containment check itself happens per-move in `onWindowMouseMove` below, against the shape's
-   * *current* vertices, so a concurrent edit elsewhere is never checked against stale geometry. */
-  function onChipDragStart(chip: ChipData, event: MouseEvent): void {
+   * containment check itself happens per-move in `onChipDragMove` below, against the shape's
+   * *current* vertices, so a concurrent edit elsewhere is never checked against stale geometry.
+   *
+   * Bug fix (user report, 2026-11-18) — move/end/cancel used to be window-level mousemove/mouseup
+   * listeners (like onWindowMouseMove/onWindowMouseUp above), which only ever receive a mouseup
+   * if the cursor is still over the browser viewport when the button is released: a fast drag
+   * ending outside the window dropped the mouseup entirely, leaving the chip stuck following a
+   * cursor that had stopped sending events, with no listener anywhere to notice. MeasurementChip
+   * now calls setPointerCapture on itself at pointerdown (same mechanism RightColumn.svelte's
+   * panel-resize divider already uses), so these three handlers fire as that chip's own
+   * pointermove/pointerup/pointercancel regardless of where the cursor physically ends up. */
+  function onChipDragStart(chip: ChipData, event: PointerEvent): void {
     const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === chip.id);
     if (!measurement || measurement.shape.type !== 'polygon') return;
     labelDragPointerDown(chip.id, event.clientX, event.clientY, chip.centroid, measurement.labelOffset);
   }
 
-  function onWindowMouseMove(event: MouseEvent): void {
-    if ($labelDrag) {
-      const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === $labelDrag!.measurementId);
-      if (measurement && measurement.shape.type === 'polygon') {
-        labelDragPointerMove(event.clientX, event.clientY, $viewport.scale, measurement.shape.vertices);
-      }
+  function onChipDragMove(chip: ChipData, event: PointerEvent): void {
+    if (!$labelDrag || $labelDrag.measurementId !== chip.id) return; // hover, not an active drag
+    const measurement = $activeSurface?.layers.flatMap((l) => l.measurements).find((m) => m.id === chip.id);
+    if (!measurement || measurement.shape.type !== 'polygon') return;
+    labelDragPointerMove(event.clientX, event.clientY, $viewport.scale, measurement.shape.vertices);
+  }
+
+  function onChipDragEnd(): void {
+    const committed = labelDragPointerUp();
+    if (committed) setLabelOffset(committed.measurementId, committed.dx, committed.dy);
+  }
+
+  function onChipDragCancel(): void {
+    cancelLabelDrag();
+  }
+
+  function onVertexLabelChipDragMove(chip: VertexLabelChipData, event: PointerEvent): void {
+    if (!$vertexLabelDrag || $vertexLabelDrag.measurementId !== chip.measurementId || $vertexLabelDrag.vertexIndex !== chip.vertexIndex) {
+      return; // hover, not an active drag
     }
-    if ($vertexLabelDrag) {
-      vertexLabelDragPointerMove(event.clientX, event.clientY, $viewport.scale);
-    }
+    vertexLabelDragPointerMove(event.clientX, event.clientY, $viewport.scale);
+  }
+
+  function onVertexLabelChipDragEnd(): void {
+    const committed = vertexLabelDragPointerUp();
+    if (committed) setVertexLabelOffset(committed.measurementId, committed.vertexIndex, committed.dx, committed.dy);
+  }
+
+  function onVertexLabelChipDragCancel(): void {
+    cancelVertexLabelDrag();
   }
 
   // 15 §14.4 "Двоен клик" — reserved solely for the per-vertex label workflow now (PO follow-up,
@@ -1089,7 +1110,7 @@
     else selectMeasurement(chip.measurementId);
   }
 
-  function onVertexLabelDragStart(chip: VertexLabelChipData, event: MouseEvent): void {
+  function onVertexLabelDragStart(chip: VertexLabelChipData, event: PointerEvent): void {
     vertexLabelDragPointerDown(chip.measurementId, chip.vertexIndex, event.clientX, event.clientY, chip.currentOffset);
   }
 
@@ -1176,7 +1197,6 @@
 
 <svelte:window
   on:mouseup={onWindowMouseUp}
-  on:mousemove={onWindowMouseMove}
   on:keydown={onWindowKeydown}
   on:keyup={onWindowKeyup}
 />
@@ -1220,6 +1240,9 @@
       onRename={(name) => renameMeasurement(chip.id, name)}
       onContextMenu={(e) => openMeasurementMenuFor(chip.id, e)}
       onDragStart={(e) => onChipDragStart(chip, e)}
+      onDragMove={(e) => onChipDragMove(chip, e)}
+      onDragEnd={onChipDragEnd}
+      onDragCancel={onChipDragCancel}
     />
   {/each}
   {#each vertexLabelChips as label (label.key)}
@@ -1232,6 +1255,9 @@
       interactive={chipsInteractive}
       onSelect={(e) => onVertexLabelSelect(label, e)}
       onDragStart={(e) => onVertexLabelDragStart(label, e)}
+      onDragMove={(e) => onVertexLabelChipDragMove(label, e)}
+      onDragEnd={onVertexLabelChipDragEnd}
+      onDragCancel={onVertexLabelChipDragCancel}
       onReset={() => onVertexLabelReset(label)}
     />
   {/each}
