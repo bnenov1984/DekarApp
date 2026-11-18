@@ -4,7 +4,16 @@ import { get } from 'svelte/store';
 import type { Surface } from '../../core/domain/entities.js';
 import { imageAssetKey } from '../../application/imageAsset.js';
 import { storageAdapter } from './persistence.js';
-import { backgroundImage, loadBackgroundImageFor, setBackgroundImage } from './imageAssetSession.js';
+
+// PO request (PDF import, grilling session 2026-11-18) — pdfRender.ts's own renderer is tested
+// directly in pdfRender.test.ts (mocking pdfjs-dist itself); here only the *dispatch* — a
+// 'pdfPage' Surface routes through it instead of createImageBitmap — needs covering.
+const mockRenderPersistedPdfPage = vi.fn();
+vi.mock('../pdf/pdfRender.js', () => ({
+  renderPersistedPdfPage: (...args: unknown[]) => mockRenderPersistedPdfPage(...args),
+}));
+
+const { backgroundImage, loadBackgroundImageFor, setBackgroundImage } = await import('./imageAssetSession.js');
 
 // createImageBitmap/ImageBitmap are browser-only APIs, absent from the Node test environment
 // (confirmed: `typeof createImageBitmap === 'undefined'` under vitest's default 'node'
@@ -19,8 +28,13 @@ function makeImageSurface(id: string): Surface {
   return { id, kind: 'image', calibration: null, layers: [] };
 }
 
+function makePdfSurface(id: string): Surface {
+  return { id, kind: 'pdfPage', calibration: null, layers: [] };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  mockRenderPersistedPdfPage.mockReset();
   setBackgroundImage(null);
 });
 
@@ -69,5 +83,27 @@ describe('loadBackgroundImageFor', () => {
 
     await loadBackgroundImageFor(surface);
     expect(get(backgroundImage)).toBe(bitmap);
+  });
+
+  it("routes a 'pdfPage' Surface through pdfRender.ts instead of createImageBitmap", async () => {
+    const bitmap = { close: vi.fn() } as unknown as ImageBitmap;
+    mockRenderPersistedPdfPage.mockResolvedValue(bitmap);
+    const surface = makePdfSurface('with-pdf-surface');
+    const stored = new Blob(['fake pdf bytes']);
+    await storageAdapter.write(imageAssetKey(surface.id), stored);
+
+    await loadBackgroundImageFor(surface);
+    expect(get(backgroundImage)).toBe(bitmap);
+    expect(mockRenderPersistedPdfPage).toHaveBeenCalledWith(expect.any(Blob));
+  });
+
+  it("clears to null when pdfRender.ts can't decode the stored blob", async () => {
+    mockRenderPersistedPdfPage.mockResolvedValue(null);
+    setBackgroundImage({ close: vi.fn() } as unknown as ImageBitmap);
+    const surface = makePdfSurface('with-corrupt-pdf-surface');
+    await storageAdapter.write(imageAssetKey(surface.id), new Blob(['corrupt']));
+
+    await loadBackgroundImageFor(surface);
+    expect(get(backgroundImage)).toBeNull();
   });
 });
