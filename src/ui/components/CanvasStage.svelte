@@ -129,7 +129,7 @@
   } from '../rendering/sceneRenderer.js';
   import { shapeCentroid } from '../../core/drawing/centroid.js';
   import { computeMeasurementDisplay, applyManualArea } from '../measurement/computeDisplay.js';
-  import { computePolygonEdgeLabels } from '../measurement/edgeLabels.js';
+  import { computePolygonEdgeLabels, EDGE_LABEL_INWARD_OFFSET_PX, type PolygonEdgeLabel } from '../measurement/edgeLabels.js';
   import { vertexLabelFontSizePx } from '../measurement/vertexLabelFontSize.js';
   import type { Point, PolygonShape, Shape } from '../../core/domain/types.js';
   import type { MeasurementId } from '../../core/domain/entities.js';
@@ -1118,6 +1118,18 @@
     setVertexLabelOffset(chip.measurementId, chip.vertexIndex, 0, 0);
   }
 
+  // Bug fix (user report, 2026-11-19) — the label used to sit exactly on the edge midpoint, which
+  // put the number right on top of the stroke it's labeling. Nudged inward along the edge's own
+  // `inwardUnitNormal` (edgeLabels.ts) by a fixed *screen*-space distance (divided by the current
+  // zoom scale, same "constant on-screen size regardless of zoom" convention as
+  // `vertexHandleRadius`/the vertex-label drag radius, sceneRenderer.ts) before converting to
+  // screen space — a scale-independent world-space offset would look proportionally bigger/smaller
+  // as the user zooms, which a fixed on-screen nudge away from the stroke should never do.
+  function edgeLabelAnchor(label: PolygonEdgeLabel): Point {
+    const offset = EDGE_LABEL_INWARD_OFFSET_PX / $viewport.scale;
+    return { x: label.midpoint.x + label.inwardUnitNormal.x * offset, y: label.midpoint.y + label.inwardUnitNormal.y * offset };
+  }
+
   // PO request (per-edge length labels, grilling session 2026-11-17) — one DOM label per Polygon
   // edge, same "DOM projection of Shape/Measurement data, never drawn on the canvas" split as
   // chips/vertexLabelChips above (21 §6.3). Gated behind the global `showEdgeLengths` toggle
@@ -1136,7 +1148,7 @@
         ).flatMap((label, index) => {
           const screenLength = Math.hypot(label.to.x - label.from.x, label.to.y - label.from.y) * $viewport.scale;
           if (screenLength < MIN_EDGE_LABEL_SCREEN_PX) return [];
-          const { x, y } = worldToScreen($viewport, label.midpoint);
+          const { x, y } = worldToScreen($viewport, edgeLabelAnchor(label));
           return [{ key: `${measurement.id}-${index}`, x, y, angleDeg: label.angleDeg, text: label.text }];
         });
       })
@@ -1163,7 +1175,7 @@
         ).flatMap((label, index) => {
           const screenLength = Math.hypot(label.to.x - label.from.x, label.to.y - label.from.y) * $viewport.scale;
           if (screenLength < MIN_EDGE_LABEL_SCREEN_PX) return [];
-          const { x, y } = worldToScreen($viewport, label.midpoint);
+          const { x, y } = worldToScreen($viewport, edgeLabelAnchor(label));
           return [{ key: `draft-${index}`, x, y, angleDeg: label.angleDeg, text: label.text }];
         })
       : [];
