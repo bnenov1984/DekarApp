@@ -143,15 +143,12 @@ export function drawBackgroundImage(
  * `accentColor` is read from the live `--af-accent` custom property by the caller (CanvasStage)
  * so the selection outline follows the active theme (16 §5) — Canvas2D can't read CSS variables
  * itself, and this module stays pure/parameterized rather than reaching into `document`. */
-export function drawSurface(
-  ctx: CanvasRenderingContext2D,
-  surface: Surface,
-  selectedIds: ReadonlySet<string>,
-  widthCss: number,
-  heightCss: number,
-  accentColor: string,
-): void {
-  ctx.clearRect(0, 0, widthCss, heightCss);
+/** The non-clearing half of `drawSurface` below, extracted (picture-export feature, grilling
+ * 2026-11-19) so the Import/Export Engine can draw shapes onto its own already-prepared canvas
+ * (its own background fill + background image already drawn) without `drawSurface`'s own
+ * `clearRect` wiping that out first — 19_IMPORT_EXPORT.md §5's own PNG row ("Import/Export Engine
+ * invokes the rendering layer, doesn't reinvent the composition") is exactly this reuse. */
+export function drawMeasurements(ctx: CanvasRenderingContext2D, surface: Surface, selectedIds: ReadonlySet<string>, accentColor: string): void {
   for (const layer of surface.layers) {
     if (!layer.visible) continue;
     for (const measurement of layer.measurements) {
@@ -163,6 +160,18 @@ export function drawSurface(
       drawMeasurement(ctx, measurement, selectedIds.has(measurement.id), accentColor);
     }
   }
+}
+
+export function drawSurface(
+  ctx: CanvasRenderingContext2D,
+  surface: Surface,
+  selectedIds: ReadonlySet<string>,
+  widthCss: number,
+  heightCss: number,
+  accentColor: string,
+): void {
+  ctx.clearRect(0, 0, widthCss, heightCss);
+  drawMeasurements(ctx, surface, selectedIds, accentColor);
 }
 
 // docs/18_DRAWING_ENGINE.md §4 — Tool Dock in-progress drawing overlay. Ghost/ dashed, never
