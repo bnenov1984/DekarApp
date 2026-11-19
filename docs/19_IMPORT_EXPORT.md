@@ -1,7 +1,7 @@
 # 19 — Import / Export Engine
 
 **Статус:** Draft v1 за одобрение от PO
-**Мандат (Bible):** Import Engine (v1 обхват по PD-011: PNG/JPG/PDF/Google Maps) + Export Engine (PNG/PDF/CSV/JSON).
+**Мандат (Bible):** Import Engine (v1 обхват по PD-011: PNG/JPG/PDF/Google Maps) + Export Engine (PNG/JPEG/PDF/CSV/JSON — PDF съществува като два различни артефакта, Picture и Report, PD-029/§5).
 **Позиция в модела:** Bounded Context (14 §1), downstream от Measurement (чете стойности за отчет), upstream спрямо Surface provisioning (произвежда Surface aggregate). Затваря празнина, оставена отворена от 11/14: **къде живее Calibration establishment логиката** — отговорът е тук (§3).
 
 ---
@@ -91,12 +91,13 @@ Report generation trigger (15 F6)
 
 | Формат | Съдържание | Генериране |
 |--------|-----------|------------|
-| **PNG** | Composite на Canvas rendering слоевете (21 §6.2: raster background + vector overlay) към единично изображение | Директен canvas snapshot — Import/Export Engine извиква rendering слоя, не преоткрива композицията |
-| **PDF (Report)** | Структуриран документ по 12 §6 принципите: заглавна страница+сумарна стойност, мащабна декларация, таблица на измерванията, ✦ provenance бележки, брандиране (P-02 зависимост за gate) | Template-driven по Workspace отчетен template (12 §2.6); данните идват от `ReportSnapshot` |
-| **CSV** | Ред на Measurement: име, тип, area, perimeter, unit, provenance (US-061 полета) | Директна серилизация на `ReportSnapshot` записите |
-| **JSON** | Пълна структурирана снимка (същите полета като CSV + coordinates/vertices за програмна консумация) | Серилизация на `ReportSnapshot` + geometry references |
+| **PNG / JPEG (Picture)** | "Screenshot" на текущо видимото съдържание: composite на canvas rendering слоевете (21 §6.2: raster background + vector overlay) **плюс** иначе DOM-only текстовите overlay-та (name/value чип, vertex labels, edge-length labels — ако `showEdgeLengths` е включен), fit-to-content, без selection highlight, плътен фон, мащабна декларация (виж по-долу) | `src/ui/export/pictureExport.ts` — reuse на `sceneRenderer.ts`'s `drawMeasurements` (не преоткрива композицията), плюс собствен Canvas2D text pass за текстовите overlay-та; **не минава през `ReportSnapshot`** — директен, живи-данни рендер в момента на клик, няма frozen snapshot entity (PD-029) |
+| **PDF (Picture)** | Същата картина като PNG/JPEG по-горе, само опакована в едностраничен PDF контейнер (`src/ui/export/pdfWrap.ts`, ръчно съставен single-image PDF — без зависимост от PDF-authoring библиотека) | PD-029 — **изрично различно** от реда "PDF (Report)" по-долу: няма заглавна страница, таблица, template; 1 PDF unit = 1 px, няма print/paper-size договор |
+| **PDF (Report)** | Структуриран документ по 12 §6 принципите: заглавна страница+сумарна стойност, мащабна декларация, таблица на измерванията, ✦ provenance бележки, брандиране (P-02 зависимост за gate) | Template-driven по Workspace отчетен template (12 §2.6); данните идват от `ReportSnapshot` — **все още непостроен** (PD-015 остава концептуален, PD-029 не го засяга) |
+| **CSV** | Ред на Measurement: име, тип, area, perimeter, unit, provenance (US-061 полета) | `src/ui/export/csvExport.ts` — директна серилизация на живите Measurement данни (не `ReportSnapshot` — същата забележка като PNG/JPEG по-горе) |
+| **JSON** | Пълна структурирана снимка (същите полета като CSV + coordinates/vertices за програмна консумация) | Серилизация на `ReportSnapshot` + geometry references — все още непостроен |
 
-**Мащабна декларация (12 §6.2) е задължително поле във всеки Report формат, който показва визуален контекст (PNG/PDF)** — не козметика: "как е измерено" е доверителният подпис (09 J4), архитектурно наложено чрез задължително (non-nullable) поле в `ReportSnapshot`, не UI checkbox, който може да остане неотметнат.
+**Мащабна декларация (12 §6.2) е задължително поле във всеки формат, който показва визуален контекст (PNG/JPEG/PDF Picture, и PDF Report)** — не козметика: "как е измерено" е доверителният подпис (09 J4). За PDF (Report) това е архитектурно наложено чрез задължително (non-nullable) поле в `ReportSnapshot`; за PNG/JPEG/PDF (Picture) (PD-029) е по-простата живи-данни версия — една текстова линия, долу вляво на картината, същата формула като StatusBar.svelte's ScaleChip (`src/ui/measurement/scaleLabel.ts`) — но принципът ("никога тихо изпуснат") е същият.
 
 ---
 
