@@ -11,30 +11,10 @@
   import { startCalibration, plausibilityWarning, calibrating } from '../stores/calibrationSession.js';
   import { splittingId } from '../stores/splitSession.js';
   import { displayUnit } from '../stores/unitPreferenceSession.js';
-  import { convertLengthFromMeters } from '../../core/measurement/unitConversion.js';
   import UnitSelector from './UnitSelector.svelte';
   import ZoomMenu from './ZoomMenu.svelte';
   import { viewOnly } from '../stores/panelLayoutSession.js';
-  import type { Unit } from '../../core/domain/types.js';
-
-  // PO request (expanded unit system, §5 "calibration display" must respect the chosen unit) —
-  // reuses the same area-unit -> length-unit derivation measurementEngine.ts's own
-  // `lengthUnitFor` does (mm2->mm, ft2->ft, etc.); duplicated as a tiny local map rather than
-  // exporting that Core-internal helper just for this one display string.
-  function lengthUnitLabel(unit: Unit): string {
-    if (unit === 'mm2') return 'mm';
-    if (unit === 'cm2') return 'cm';
-    if (unit === 'in2') return 'in';
-    if (unit === 'ft2') return 'ft';
-    return 'm';
-  }
-
-  function formatScale(metersPerPixel: number, unit: Unit): string {
-    const label = lengthUnitLabel(unit);
-    const converted = convertLengthFromMeters(metersPerPixel, label as Unit);
-    const trimmed = converted.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-    return `1 px = ${trimmed} ${label}`;
-  }
+  import { formatScale } from '../measurement/scaleLabel.js';
 
   $: calibration = $activeSurface?.calibration ?? null;
   // PO follow-up (UX review, item B3 "amber Not-calibrated chip") — every value in the app reads

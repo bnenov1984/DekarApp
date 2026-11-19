@@ -1,7 +1,7 @@
 <script lang="ts">
-  // 15_UX_SPECIFICATION.md §6/W1 — TopBar: 48px. Workspace chip/share/export are still not wired
-  // beyond the v1 CSV export below — no Workspace catalog and no full Export pipeline exist in
-  // code yet.
+  // 15_UX_SPECIFICATION.md §6/W1 — TopBar: 48px. Workspace chip/share are still not wired — no
+  // Workspace catalog exists in code yet. Export itself is now a menu (ExportMenu.svelte,
+  // grilling 2026-11-19): CSV, plus PNG/JPEG/PDF picture exports (PD-029).
   //
   // PO follow-up ("simplify entry flow") — the logo previously doubled as "back to Home"
   // (`onBack` prop); Home is no longer part of the default flow (appState.ts always opens
@@ -22,38 +22,15 @@
   // name is approved, and the logo was explicitly named as one of the still-deferred spots. The
   // rest of PD-026's rename (page <title>, repo/package name, Render service, domain) stays
   // "AreaFlow" until that separate task.
-  import { canUndo, canRedo, undo, redo, activeSurface } from '../stores/studioSession.js';
+  import { canUndo, canRedo, undo, redo } from '../stores/studioSession.js';
   import { renameProject } from '../stores/appState.js';
-  import { displayUnit } from '../stores/unitPreferenceSession.js';
-  import { buildMeasurementsCsv, csvFilename } from '../export/csvExport.js';
   import { tick } from 'svelte';
   import ImportButton from './ImportButton.svelte';
+  import ExportMenu from './ExportMenu.svelte';
   import AccountMenu from './AccountMenu.svelte';
   import { viewOnly } from '../stores/panelLayoutSession.js';
 
   export let projectName: string | null = null;
-
-  // PO follow-up (UX review, item A1 "no export", v1 scope) — the app previously had no way to
-  // get measurements out at all; a v1 CSV export closes that loop (a full templated Report/PDF
-  // pipeline is modeled in the domain — entities.ts's Report/ReportSnapshot — but genuinely
-  // unbuilt, out of scope for this pass). Disabled with nothing to export, same "nothing to do"
-  // gating as Undo/Redo above.
-  $: hasMeasurements = ($activeSurface?.layers.flatMap((l) => l.measurements) ?? []).length > 0;
-
-  function onExportClick(): void {
-    const surface = $activeSurface;
-    if (!surface) return;
-    const csv = buildMeasurementsCsv(surface, $displayUnit);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = csvFilename(projectName ?? 'areaflow-export');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
 
   // PO follow-up (UX review, item A7 "project rename") — every project was permanently
   // "Untitled"; same click-to-edit/Enter-commits/Escape-cancels pattern as MeasurementChip's
@@ -165,16 +142,7 @@
   {#if !$viewOnly}
     <ImportButton />
   {/if}
-  <button
-    type="button"
-    class="export-button"
-    disabled={!hasMeasurements}
-    on:click={onExportClick}
-    title={hasMeasurements ? 'Export measurements as CSV' : 'Nothing to export yet'}
-    data-testid="export-csv"
-  >
-    Export
-  </button>
+  <ExportMenu {projectName} />
   <AccountMenu />
 </header>
 
@@ -241,33 +209,6 @@
 
   .spacer {
     flex: 1;
-  }
-
-  .export-button {
-    font: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--af-ink-secondary);
-    background: none;
-    border: 1px solid var(--af-border-subtle);
-    padding: 5px 12px;
-    border-radius: var(--af-radius);
-    cursor: pointer;
-  }
-
-  .export-button:hover:not(:disabled) {
-    color: var(--af-ink-primary);
-    border-color: var(--af-ink-secondary);
-  }
-
-  .export-button:focus-visible {
-    outline: 2px solid var(--af-accent);
-    outline-offset: 1px;
-  }
-
-  .export-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   .history-controls {
