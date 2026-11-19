@@ -5,7 +5,7 @@ import { shapeCentroid } from '../../core/drawing/centroid.js';
 import { effectiveImageRect } from '../stores/imageResizeSession.js';
 import { drawMeasurements, resizeHandlePoints } from '../rendering/sceneRenderer.js';
 import { applyManualArea, computeMeasurementDisplay } from '../measurement/computeDisplay.js';
-import { computePolygonEdgeLabels } from '../measurement/edgeLabels.js';
+import { computePolygonEdgeLabels, EDGE_LABEL_INWARD_OFFSET_PX } from '../measurement/edgeLabels.js';
 import { vertexLabelFontSizePx } from '../measurement/vertexLabelFontSize.js';
 import { scaleCaptionText } from '../measurement/scaleLabel.js';
 import { wrapJpegInPdf } from './pdfWrap.js';
@@ -280,8 +280,14 @@ export function renderExportCanvas(surface: Surface, backgroundImage: ImageBitma
     for (const measurement of visibleMeasurements(surface)) {
       if (measurement.shape.type !== 'polygon') continue;
       for (const edgeLabel of computePolygonEdgeLabels(measurement.shape.vertices, true, surface.calibration, unit)) {
+        // Bug fix (user report, 2026-11-19) — nudged inward off the stroke, same fix and same
+        // constant as CanvasStage.svelte's `edgeLabelAnchor`; here there's no viewport scale to
+        // divide by, 1 world unit already renders at this module's own fixed oversampling, so the
+        // constant applies directly (same convention `PADDING_WORLD` above already assumes).
+        const anchorX = edgeLabel.midpoint.x + edgeLabel.inwardUnitNormal.x * EDGE_LABEL_INWARD_OFFSET_PX;
+        const anchorY = edgeLabel.midpoint.y + edgeLabel.inwardUnitNormal.y * EDGE_LABEL_INWARD_OFFSET_PX;
         ctx.save();
-        ctx.translate(edgeLabel.midpoint.x, edgeLabel.midpoint.y);
+        ctx.translate(anchorX, anchorY);
         ctx.rotate((edgeLabel.angleDeg * Math.PI) / 180);
         ctx.font = '400 10px sans-serif';
         ctx.textAlign = 'center';
