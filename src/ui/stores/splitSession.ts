@@ -99,8 +99,20 @@ export function toggleSplitTool(selectedId: MeasurementId | null): void {
   startSplit(selectedId);
 }
 
-/** 15 §5 F7 step 4 — `Enter` confirms. Silently a no-op if the line doesn't cross the boundary
- * exactly twice yet (same "gate, don't error" pattern as Polygon/Line closing, drawingSession.ts). */
+/** 15 §5 F7 step 4 — `Enter` (or a double-click, CanvasStage.svelte's `onDblClick`) confirms.
+ * Silently a no-op if the line doesn't cross the boundary exactly twice yet (same "gate, don't
+ * error" pattern as Polygon/Line closing, drawingSession.ts).
+ *
+ * Bug fix (user report, 2026-11-20) — the live ghost preview (CanvasStage.svelte's own redraw)
+ * has always included the current, not-yet-clicked cursor position as a provisional final point,
+ * so a user who places one point and simply hovers to the spot they want the cut to end sees a
+ * complete, correctly-split preview — but this function used to check only the already-*clicked*
+ * points, which could still be a single point. Confirming did nothing, with no explanation, and
+ * since nothing ever registered the hovered position as real, the line "could never be ended."
+ * Now mirrors the preview's own data exactly: the already-clicked points are tried first (so a
+ * deliberately-placed, already-valid line is never second-guessed by wherever the mouse happens
+ * to have drifted to since), and only if those alone aren't yet a valid cut does the live cursor
+ * get folded in too — "what you see is what Enter commits," never a stricter rule than the preview. */
 export function confirmSplit(): void {
   const measurementId = get(splittingId);
   if (!measurementId) return;
@@ -108,14 +120,16 @@ export function confirmSplit(): void {
   if (!shape) return;
 
   const points = get(splitLinePoints);
-  if (!canSplit(shape, points)) return;
+  const cursor = get(splitCursor);
+  const effectiveLine = canSplit(shape, points) ? points : cursor ? [...points, cursor] : points;
+  if (!canSplit(shape, effectiveLine)) return;
 
-  const result = split(shape, points);
+  const result = split(shape, effectiveLine);
   if (!result.ok) return; // defensive — canSplit already guarantees this, never expected to fire
 
   const childIds: readonly [string, string] = [newId(), newId()];
   executeCommand((surface) =>
-    splitCommand({ surface, parentMeasurementId: measurementId, splitLine: points, childIds }),
+    splitCommand({ surface, parentMeasurementId: measurementId, splitLine: effectiveLine, childIds }),
   );
   cancelSplit();
 }

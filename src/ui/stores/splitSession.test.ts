@@ -226,11 +226,45 @@ describe('confirmSplit', () => {
     }
   });
 
-  it('a hovered (not yet clicked) cursor position is never committed — only placed points are', () => {
+  // Bug fix (user report, 2026-11-20) — this used to assert the opposite (a hovered cursor was
+  // never committed), matching Polygon/Line's "cursor is preview-only" convention. But the live
+  // ghost preview (CanvasStage.svelte) has always included the hovered cursor as a provisional
+  // final point, so a user who placed one point and simply hovered to a valid end position saw a
+  // complete, correct-looking preview — then pressing Enter silently did nothing, because nothing
+  // had actually committed that position. confirmSplit now falls back to the hovered cursor
+  // whenever the already-placed points alone aren't yet a valid cut, so confirming always matches
+  // what the preview is already showing.
+  it('commits using the hovered cursor as the final point when only one point has actually been clicked', () => {
     pointerDown({ x: 5, y: -1 });
-    pointerMove({ x: 5, y: 11 }); // second point only hovered, not clicked
-    confirmSplit(); // confirmSplit only ever commits *placed* points — still just 1 point here
-    expect(allMeasurements()).toHaveLength(1); // no commit — matches Polygon/Line's "cursor is preview-only" rule
+    pointerMove({ x: 5, y: 11 }); // second point only hovered, never clicked
+    confirmSplit();
+
+    expect(get(splittingId)).toBeNull();
+    const children = allMeasurements().filter((m) => m.parentId === 'parcel');
+    expect(children).toHaveLength(2); // the hover position was folded in and committed
+  });
+
+  it('prefers already-placed points over the live cursor once those alone are already a valid cut', () => {
+    pointerDown({ x: 5, y: -1 });
+    pointerDown({ x: 5, y: 11 }); // two clicks: already a valid vertical cut on its own
+    pointerMove({ x: 50, y: 50 }); // cursor has since drifted somewhere unrelated/invalid
+    confirmSplit();
+
+    expect(get(splittingId)).toBeNull();
+    const children = allMeasurements().filter((m) => m.parentId === 'parcel');
+    expect(children).toHaveLength(2); // committed exactly the two deliberately-clicked points
+    for (const child of children) {
+      if (child.shape.type !== 'polygon') throw new Error('expected polygon');
+      // Neither child's boundary should reach anywhere near the stray (50, 50) cursor position.
+      for (const v of child.shape.vertices) expect(Math.hypot(v.x - 50, v.y - 50)).toBeGreaterThan(30);
+    }
+  });
+
+  it('still a no-op with one placed point and no hover at all (nothing to fall back to)', () => {
+    pointerDown({ x: 5, y: -1 }); // one point, cursor never set
+    confirmSplit();
+    expect(allMeasurements()).toHaveLength(1);
+    expect(get(splittingId)).toBe('parcel');
   });
 
   it('is undoable — removes exactly the two children, parent and Surface otherwise identical', () => {
