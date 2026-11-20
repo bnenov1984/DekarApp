@@ -64,7 +64,10 @@
     : $calibrating
     ? null
     : $splittingId
-      ? 'Click points across the shape, then Enter to confirm the split'
+      ? // Bug fix (user report, 2026-11-20) — double-click now finishes the split line too
+        // (CanvasStage.svelte's onDblClick), same two-synonymous-gestures wording Polygon's own
+        // hint already uses below.
+        'Click points across the shape, then double-click or Enter to confirm the split'
       : $backgroundSelected
         ? 'Unlock the Background layer (Layers panel) to resize or move it'
         : $selectedMeasurementIds.size > 1

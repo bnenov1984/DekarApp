@@ -68,6 +68,7 @@
     pointerDown as splitPointerDown,
     pointerMove as splitPointerMove,
     cancelSplit,
+    confirmSplit,
   } from '../stores/splitSession.js';
   import {
     effectiveImageRect,
@@ -780,7 +781,17 @@
   // double-click no longer has an "enter edit mode" job to do). Over a Polygon being drawn, still
   // closes it regardless of self-snap proximity (§5 F1 step 6) instead.
   function onDblClick(event: MouseEvent): void {
-    if ($calibrating || $splittingId || $viewOnly) return;
+    if ($calibrating || $viewOnly) return;
+    // Bug fix (user report, 2026-11-20) — double-click used to be silently swallowed while
+    // splitting, even though Polygon's own hint already offers "double-click or Enter to finish"
+    // for the same click-to-place-points mechanic; anyone used to that reasonably tried the same
+    // gesture here and got nothing. Reuses confirmSplit() unchanged (same fallback-to-live-cursor
+    // fix as Enter) rather than re-deriving "is this a valid cut" here, so the two gestures can
+    // never disagree about what counts as finished.
+    if ($splittingId) {
+      confirmSplit();
+      return;
+    }
     if ($activeTool === 'polygon') {
       handleEnter();
       return;
