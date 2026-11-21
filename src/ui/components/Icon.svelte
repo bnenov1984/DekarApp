@@ -87,7 +87,20 @@
   {:else if name === 'rectangle'}
     <rect x="4" y="6" width="16" height="12" rx="1.2" />
   {:else if name === 'polygon'}
-    <path d="M12 3.5 21 10l-3.4 10H6.4L3 10Z" />
+    <!-- User request, 2026-11-21 — a regular pentagon read as "draw 5-sided shapes," not what
+         the tool actually does (click to place any number of points). An irregular outline
+         avoids implying a fixed side count; the vertex dots echo the same "vertices as handles"
+         language already used for an in-progress/editable shape (16_DESIGN_SYSTEM.md §3.1
+         MeasurementShape), so the icon itself teaches the click-to-place-points mechanic. -->
+    <path d="M4 15 L7 6 L16 4 L20 10 L18 20 L8 19 Z" />
+    <g fill="currentColor" stroke="none">
+      <circle cx="4" cy="15" r="1.3" />
+      <circle cx="7" cy="6" r="1.3" />
+      <circle cx="16" cy="4" r="1.3" />
+      <circle cx="20" cy="10" r="1.3" />
+      <circle cx="18" cy="20" r="1.3" />
+      <circle cx="8" cy="19" r="1.3" />
+    </g>
   {:else if name === 'circle'}
     <circle cx="12" cy="12" r="8.5" />
   {:else if name === 'freehand'}

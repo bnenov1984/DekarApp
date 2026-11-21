@@ -21,15 +21,21 @@
 
   // PO follow-up ("replace Select tool with Pan") — Select is gone (selection is a direct, always-
   // available canvas interaction now, studioSession.ts — no toolbar mode needed for it); Pan takes
-  // its place as the first slot, the idle/default tool. Every slot now renders through Icon.svelte
-  // instead of a raw Unicode glyph — this file was the one remaining holdout from that migration
-  // (Icon.svelte's own header comment), and introducing a brand-new glyph just for Pan would have
-  // added a second, contradictory icon convention at the exact moment the rest of the dock could
-  // just as easily join the existing one.
+  // the first slot, the idle/default tool. Every slot now renders through Icon.svelte instead of a
+  // raw Unicode glyph — this file was the one remaining holdout from that migration (Icon.svelte's
+  // own header comment), and introducing a brand-new glyph just for Pan would have added a second,
+  // contradictory icon convention at the exact moment the rest of the dock could just as easily
+  // join the existing one.
+  //
+  // User request, 2026-11-21 — Polygon moved to the second slot (right after Pan): it's the
+  // primary tool for this product's actual use case (tracing an irregular parcel/floor-plan
+  // boundary), so it should be the first *drawing* tool a user reaches, ahead of Rectangle/Circle/
+  // Freehand/Distance. Pan stays first — still the idle/default, reached for constantly regardless
+  // of which shape tool is in use.
   const TOOLS: readonly ToolSpec[] = [
     { id: 'pan', label: 'Pan', shortcut: 'H', icon: 'pan' },
-    { id: 'rectangle', label: 'Rectangle', shortcut: 'R', icon: 'rectangle' },
     { id: 'polygon', label: 'Polygon', shortcut: 'P', icon: 'polygon' },
+    { id: 'rectangle', label: 'Rectangle', shortcut: 'R', icon: 'rectangle' },
     { id: 'circle', label: 'Circle', shortcut: 'C', icon: 'circle' },
     { id: 'freehand', label: 'Freehand', shortcut: 'F', icon: 'freehand' },
     { id: 'line', label: 'Distance', shortcut: 'D', icon: 'line' },
